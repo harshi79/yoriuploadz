@@ -1,7 +1,7 @@
 # YoriUpload — Netlify configuration
 
 [build]
-  publish = "."
+  publish = "public"
   functions = "netlify/functions"
 
 # Rewrite the upload endpoint logic.
@@ -13,17 +13,6 @@
 [[redirects]]
   from = "/api/import"
   to = "/.netlify/functions/import-url"
-  status = 200
-
-# Keep repo files out of the served site.
-[[redirects]]
-  from = "/README.md"
-  to = "/index.html"
-  status = 200
-
-[[redirects]]
-  from = "/LICENSE"
-  to = "/index.html"
   status = 200
 
 # SPA-style fallback for any other path (functions are matched first).

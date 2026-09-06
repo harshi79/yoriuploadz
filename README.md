@@ -23,7 +23,7 @@ all live on your own domain.
 
 1. Push this repo to GitHub (or connect it via the Netlify UI).
 2. In Netlify: **Add new site → Import from Git** → pick the repo.
-3. No build command is needed; publish directory is `.` (auto-detected from
+3. No build command is needed; publish directory is `public` (set in
    `netlify.toml`, functions are picked up from `netlify/functions`).
 4. Deploy. That's it.
 
@@ -83,11 +83,12 @@ netlify.toml              # Netlify config: publish dir, redirects, headers
 netlify/functions/        # Dependency-free relay functions
   upload.js               #   POST /api/upload  (raw file bytes → storage)
   import-url.js           #   POST /api/import  (direct URL → storage)
-index.html                # Landing, uploader and share viewer
-styles.css                # Styling
-app.js                    # Client logic (upload, paste, history, viewer)
-terms.html / 404.html     # Info pages
-icon.svg                  # Favicon
+public/                   # What visitors see (nothing else is published)
+  index.html              #   Landing, uploader and share viewer
+  styles.css              #   Styling
+  app.js                  #   Client logic (upload, paste, history, viewer)
+  terms.html / 404.html   #   Info pages
+  icon.svg                #   Favicon
 ```
 
 ## License
