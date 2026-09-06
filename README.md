@@ -50,6 +50,7 @@ Then open <http://localhost:8888>.
 | `UPLOAD_BUDGET_MS`| **Optional.** Total time the relay may spend talking to storage. Default `9000`, deliberately under Netlify's 10 s function timeout. Raise it only if your plan allows longer-running functions. |
 | `UPSTREAM_ORDER`  | **Optional.** Comma-separated provider order, e.g. `zerox,catbox`. Valid ids: `litterbox`, `catbox`, `zerox`, `tmpfiles`. |
 | `UPSTREAM_DISABLED`| **Optional.** Comma-separated provider ids to never use, e.g. `tmpfiles`. |
+| `UPSTREAM_REENABLE`| **Optional.** Re-enable providers that are skipped by default, e.g. `zerox` (0x0.st, see below). An explicit `UPSTREAM_ORDER` already wins over the defaults. |
 
 You can also copy `.env.example` to `.env` for local testing.
 
@@ -57,9 +58,15 @@ You can also copy `.env.example` to `.env` for local testing.
 
 | Link type | Order tried |
 | --------- | ----------- |
-| 1 h / 12 h / 24 h / 72 h | Litterbox → 0x0.st → tmpfiles.org |
-| Permanent | Catbox → 0x0.st |
-| URL import | Catbox → 0x0.st |
+| 1 h / 12 h / 24 h / 72 h | Litterbox → tmpfiles.org |
+| Permanent | Catbox |
+| URL import | Catbox |
+
+**0x0.st is disabled by default** (in the chains above but skipped at runtime):
+it switched off all uploads in Aug 2026 — "almost nothing but AI botnet spam…
+no ETA" — so attempting it only wastes budget before a fallback is reached.
+Set `UPSTREAM_REENABLE=zerox` (or an `UPSTREAM_ORDER` that includes `zerox`)
+once it is accepting uploads again; the relay picks it up with no code change.
 
 The whole chain runs inside `UPLOAD_BUDGET_MS`; the first provider gets most of
 the budget and a slice is always reserved so a fallback can still be attempted.
@@ -93,7 +100,7 @@ When a fallback is used the UI says so, because retention differs per provider
 
    | Symptom | Cause | Fix |
    | ------- | ----- | --- |
-   | `Catbox: invalid Uploader` / HTTP 403 from Catbox | Catbox blocks many datacenter IP ranges, and Netlify Functions run from one | Nothing to fix locally — the relay now fails over to `0x0.st`. To skip Catbox entirely set `UPSTREAM_ORDER=zerox`. |
+   | `Catbox: invalid Uploader` / HTTP 403 from Catbox | Catbox blocks many datacenter IP ranges, and Netlify Functions run from one | The relay fails over to `0x0.st` when it is enabled — it is skipped by default while 0x0.st's upload ban is in effect, so set `UPSTREAM_REENABLE=zerox` (or an explicit `UPSTREAM_ORDER` including `zerox`) for permanent links to have a fallback. |
    | `HTTP 502/504 — Task timed out` | The upload ran past Netlify's 10 s function limit | Already mitigated by `UPLOAD_BUDGET_MS=9000`; upload smaller files, or raise the limit if your plan allows longer functions. |
    | `HTTP 413` | File bigger than 4 MB | Netlify caps function request bodies at ~6 MB (~4.4 MB before base64). Not raisable in this architecture. |
    | `HTTP 403 … requires an access key` | `APP_SECRET` is set | Enter the key when prompted; it is stored in localStorage. |
