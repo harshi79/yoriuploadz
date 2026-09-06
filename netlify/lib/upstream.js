@@ -37,6 +37,10 @@ const ENDPOINTS = {
 };
 
 const EXPIRY_HOURS = { '1h': 1, '12h': 12, '24h': 24, '72h': 72 };
+
+// 0x0.st returns either https://0x0.st/<id>.<ext> or, for 'secret' uploads,
+// a multi-segment https://0x0.st/s/<token>/<id>.<ext> — accept both.
+const ZEROX_URL_RE = /^https:\/\/0x0\.st\/[A-Za-z0-9._\-/]+$/i;
 const VALID_EXPIRY = new Set(Object.keys(EXPIRY_HOURS));
 
 function clampInt(value, fallback, min, max) {
@@ -72,11 +76,19 @@ async function fetchWithTimeout(url, options, timeoutMs) {
   }
 }
 
-function fileForm(fields, buffer, fieldName, filename, mime) {
+/**
+ * Build a multipart body.
+ *
+ * `flags` are presence-only fields: some APIs (0x0.st's `secret`) act on the
+ * field *existing*, and their value is ignored — so they must survive the
+ * empty-value filter applied to normal fields.
+ */
+function fileForm(fields, buffer, fieldName, filename, mime, flags = []) {
   const form = new FormData();
   for (const [k, v] of Object.entries(fields)) {
     if (v !== undefined && v !== null && v !== '') form.append(k, String(v));
   }
+  for (const flag of flags) form.append(flag, '');
   if (buffer) {
     form.append(fieldName, new Blob([buffer], { type: mime || 'application/octet-stream' }), filename);
   }
@@ -151,19 +163,20 @@ const providers = {
     retention: (expiry) =>
       expiry === 'permanent' ? 'long-term link (fallback storage, up to 1 year)' : `expires in ${expiry}`,
     async upload(buffer, meta, timeoutMs) {
-      const fields = { secret: '' };
+      const fields = {};
       if (meta.expiry !== 'permanent') fields.expires = String(EXPIRY_HOURS[meta.expiry] || 24);
-      const form = fileForm(fields, buffer, 'file', meta.filename, meta.mime);
+      // 'secret' asks for an unguessable URL — appropriate for a share service.
+      const form = fileForm(fields, buffer, 'file', meta.filename, meta.mime, ['secret']);
       const res = await fetchWithTimeout(ENDPOINTS.zerox, { method: 'POST', body: form }, timeoutMs);
       const text = (await res.text()).trim();
-      const ok = res.ok && /^https:\/\/0x0\.st\/[A-Za-z0-9._-]+$/i.test(text);
+      const ok = res.ok && ZEROX_URL_RE.test(text);
       return { ok, url: ok ? text : null, status: res.status, detail: ok ? '' : cleanReason(text) };
     },
     async fromUrl(url, timeoutMs) {
-      const form = fileForm({ url, secret: '' });
+      const form = fileForm({ url }, null, null, null, null, ['secret']);
       const res = await fetchWithTimeout(ENDPOINTS.zerox, { method: 'POST', body: form }, timeoutMs);
       const text = (await res.text()).trim();
-      const ok = res.ok && /^https:\/\/0x0\.st\/[A-Za-z0-9._-]+$/i.test(text);
+      const ok = res.ok && ZEROX_URL_RE.test(text);
       return { ok, url: ok ? text : null, status: res.status, detail: ok ? '' : cleanReason(text) };
     },
   },
