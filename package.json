@@ -5,6 +5,8 @@
   "description": "YoriUpload — fast, private file sharing.",
   "scripts": {
     "dev": "npx netlify-cli dev",
+    "dev:local": "node scripts/dev-server.js",
+    "dev:offline": "MOCK_UPSTREAM=1 node scripts/dev-server.js",
     "build": "echo 'static frontend, nothing to build'"
   },
   "engines": {

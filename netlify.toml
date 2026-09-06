@@ -15,6 +15,12 @@
   to = "/.netlify/functions/import-url"
   status = 200
 
+# Deployment self-check: which storage provider is reachable from this site?
+[[redirects]]
+  from = "/api/diag"
+  to = "/.netlify/functions/diag"
+  status = 200
+
 # SPA-style fallback for any other path (functions are matched first).
 [[redirects]]
   from = "/*"
