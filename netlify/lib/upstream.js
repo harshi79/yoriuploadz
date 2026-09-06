@@ -212,18 +212,48 @@ const DEFAULT_CHAINS = {
   url: ['catbox', 'zerox'],
 };
 
-/** Env overrides: UPSTREAM_ORDER="zerox,catbox" and UPSTREAM_DISABLED="tmpfiles". */
+/**
+ * Providers that are in the chains but skipped by default because the
+ * provider is currently down on its own side:
+ *
+ * zerox — 0x0.st disabled uploads in Aug 2026 ("uploads disabled because
+ *          it's been almost nothing but AI botnet spam … will be back with
+ *          a few changes at some point. no ETA."). Trying it only wastes
+ *          upload budget and adds latency before a fallback can be reached.
+ *
+ * The provider stays registered so the relay is ready the moment uploads
+ * work again: re-enable with UPSTREAM_REENABLE=zerox (or an explicit
+ * UPSTREAM_ORDER that includes zerox) — no code change needed.
+ */
+const DISABLED_BY_DEFAULT = ['zerox'];
+
+/**
+ * Env overrides:
+ *   UPSTREAM_ORDER="zerox,catbox" — explicit provider order (wins over the
+ *                                   built-in defaults, including the ones
+ *                                   disabled by default)
+ *   UPSTREAM_DISABLED="tmpfiles"  — never use this provider
+ *   UPSTREAM_REENABLE="zerox"     — re-enable a provider that is disabled
+ *                                   by default
+ */
 function chainFor(kind) {
-  const disabled = new Set(
-    String(process.env.UPSTREAM_DISABLED || '')
+  const csv = (v) =>
+    String(v || '')
       .split(',')
       .map((s) => s.trim().toLowerCase())
-      .filter(Boolean)
-  );
-  const override = String(process.env.UPSTREAM_ORDER || '')
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter((id) => providers[id]);
+      .filter(Boolean);
+
+  const reenabled = new Set(csv(process.env.UPSTREAM_REENABLE));
+  const disabled = new Set(csv(process.env.UPSTREAM_DISABLED));
+  const override = csv(process.env.UPSTREAM_ORDER).filter((id) => providers[id]);
+
+  // An explicit UPSTREAM_ORDER is a deliberate choice and wins over the
+  // built-in defaults; UPSTREAM_DISABLED still applies in either case.
+  if (!override.length) {
+    for (const id of DISABLED_BY_DEFAULT) {
+      if (!reenabled.has(id)) disabled.add(id);
+    }
+  }
 
   const base = override.length ? override : DEFAULT_CHAINS[kind];
   return base.filter((id) => providers[id] && providers[id].kinds.includes(kind) && !disabled.has(id));
