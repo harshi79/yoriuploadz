@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>YoriUpload — share files instantly</title>
+  <meta name="description" content="Fast, private file sharing. Upload, get a link, share it anywhere — no account needed." />
+  <meta name="theme-color" content="#0b0d12" />
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="bg-glow" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">Y</span>
+      <span class="brand-name">YoriUpload</span>
+    </div>
+    <span class="badge">v1 · private beta</span>
+  </header>
+
+  <main>
+    <section class="hero" id="top">
+      <h1>Share files <span class="accent">instantly.</span></h1>
+      <p class="sub">
+        Drop a file, grab a link. Live for 1 hour, 24 hours, or forever —
+        no account, no sign-up, no downloads required.
+      </p>
+    </section>
+
+    <section class="panel uploader" aria-label="Upload a file">
+      <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Choose or drop a file to upload">
+        <div class="dz-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 16V4" />
+            <path d="m7 9 5-5 5 5" />
+            <path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
+          </svg>
+        </div>
+        <div class="dz-copy">
+          <strong>Drag &amp; drop a file here</strong>
+          <span>or <button type="button" class="link-btn" id="browseBtn">browse your device</button> · paste from clipboard (Ctrl+V)</span>
+        </div>
+        <input type="file" id="fileInput" hidden />
+      </div>
+
+      <div class="row option-row">
+        <label class="option" for="life-select">
+          <span>Link expires</span>
+          <select id="life-select">
+            <option value="1h">1 hour</option>
+            <option value="12h">12 hours</option>
+            <option value="24h" selected>24 hours</option>
+            <option value="72h">72 hours</option>
+            <option value="permanent">Never (permanent)</option>
+          </select>
+        </label>
+      </div>
+
+      <details class="import-zone" id="importZone">
+        <summary>Import a file from a URL</summary>
+        <form id="importForm" class="import-form">
+          <input type="url" id="importUrl" placeholder="https://example.com/file.pdf" required autocomplete="off" />
+          <button type="submit" class="btn btn-ghost">Import</button>
+        </form>
+      </details>
+
+      <div id="progress" class="progress hidden" role="status" aria-live="polite">
+        <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
+        <span id="progressText">Uploading…</span>
+      </div>
+
+      <div id="result" class="result hidden" aria-live="polite"></div>
+
+      <p id="limitNote" class="limit-note">Images are optimized automatically · up to ~4 MB per upload</p>
+    </section>
+
+    <section id="viewer" class="panel viewer hidden" aria-label="File viewer">
+      <div class="viewer-brand"><span class="brand-mark" aria-hidden="true">Y</span> YoriUpload</div>
+      <div id="viewerBody"></div>
+    </section>
+
+    <section class="recent" id="recentSection" hidden>
+      <div class="recent-head">
+        <h2>Recent uploads</h2>
+        <button type="button" class="link-btn" id="clearHistory">clear</button>
+      </div>
+      <ul id="recentList" class="recent-list"></ul>
+    </section>
+
+    <section class="features">
+      <div class="feature">
+        <div class="feature-icon" aria-hidden="true">⚡</div>
+        <h3>Lightning fast</h3>
+        <p>Uploads stream straight to storage. Your link is ready in seconds.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon" aria-hidden="true">🔒</div>
+        <h3>No account</h3>
+        <p>No email, no name, no sign-up. Just drop a file and share the link.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon" aria-hidden="true">♾️</div>
+        <h3>Choose expiry</h3>
+        <p>Links can live for hours or stay permanent. You decide.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon" aria-hidden="true">🖥️</div>
+        <h3>Works everywhere</h3>
+        <p>Built for desktop and mobile browsers — nothing to install.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>Files are transmitted securely and stored on redundant infrastructure. Uploaded content is governed by our acceptable-use policy — see <a href="/terms.html">Terms</a>.</p>
+    <p class="footer-mini">YoriUpload · made for fast, simple sharing</p>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>

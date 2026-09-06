@@ -1,0 +1,17 @@
+{
+  "name": "yoriupload",
+  "version": "1.0.0",
+  "private": true,
+  "description": "YoriUpload — fast, private file sharing.",
+  "scripts": {
+    "dev": "npx netlify-cli dev",
+    "build": "echo 'static frontend, nothing to build'",
+    "deploy": "netlify deploy --prod"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "netlify-cli": "^27.5.0"
+  }
+}
