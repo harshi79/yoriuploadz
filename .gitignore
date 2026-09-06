@@ -1,0 +1,15 @@
+# Local secrets / environment
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local Netlify / tooling
+.netlify/
+node_modules/
+dist/
