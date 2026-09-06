@@ -5,13 +5,9 @@
   "description": "YoriUpload — fast, private file sharing.",
   "scripts": {
     "dev": "npx netlify-cli dev",
-    "build": "echo 'static frontend, nothing to build'",
-    "deploy": "netlify deploy --prod"
+    "build": "echo 'static frontend, nothing to build'"
   },
   "engines": {
     "node": ">=18"
-  },
-  "dependencies": {
-    "netlify-cli": "^27.5.0"
   }
 }
