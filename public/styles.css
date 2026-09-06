@@ -305,6 +305,23 @@ select:focus, input[type="url"]:focus { border-color: var(--accent); }
 
 .result-meta { color: var(--text-dim); font-size: 0.82rem; margin: 8px 0 0; }
 
+/* ---------- failure diagnostics ---------- */
+.diag { margin-top: 12px; }
+.diag .btn { font-size: 0.82rem; padding: 7px 12px; }
+
+.diag-out {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  margin-top: 10px;
+  word-break: break-word;
+}
+
+.diag-out ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
 /* ---------- file viewer ---------- */
 .viewer { text-align: center; padding: 30px 22px; }
 .viewer-brand {

@@ -83,6 +83,39 @@
     showToast._t = setTimeout(() => toast.classList.remove('show'), ms);
   }
 
+  /**
+   * Turn any failure into something a human can act on.
+   *
+   * The relay answers JSON, but the platform in front of it does not: when a
+   * function times out or crashes, Netlify replies with plain text or HTML and
+   * a 502/504. Those used to fall through to "Something went wrong", which is
+   * why failures were impossible to diagnose from the UI.
+   */
+  function explainFailure(status, data, rawText) {
+    if (data && data.error) {
+      const attempts = Array.isArray(data.attempts) ? data.attempts.filter((a) => a && a.error) : [];
+      const trail = attempts.length
+        ? ` (tried ${attempts.map((a) => `${a.provider}: ${a.error || 'HTTP ' + a.status}`).join('; ')})`
+        : '';
+      return data.error + trail;
+    }
+
+    const snippet = String(rawText || '')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 180);
+
+    if (!status) return 'Network error — the request never reached the server. Check your connection and try again.';
+    if (status === 413) return 'That file is too large for this deployment (max 4 MB).';
+    if (status === 429) return 'Too many uploads in a short time. Wait a minute and try again.';
+    if (status === 504 || status === 502) {
+      return `The upload relay could not reach storage (HTTP ${status})${snippet ? ` — ${snippet}` : ''}. ` +
+        'This is usually a slow or blocked storage provider; try a smaller file or retry in a moment.';
+    }
+    return `Upload relay error (HTTP ${status})${snippet ? ` — ${snippet}` : ''}`;
+  }
+
   function setProgress(pct, label) {
     progressWrap.classList.remove('hidden');
     progressBar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
@@ -92,6 +125,66 @@
   function hideProgress() {
     progressWrap.classList.add('hidden');
     progressBar.style.width = '0%';
+  }
+
+  /**
+   * "Upload failed" is useless on its own, so every error offers a one-click
+   * self-check: /api/diag reports, from inside the deployed function, which
+   * storage provider is actually reachable and what it said.
+   */
+  function diagnosticsBlock() {
+    const wrap = document.createElement('div');
+    wrap.className = 'diag';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-ghost';
+    btn.textContent = 'Run diagnostics';
+    const out = document.createElement('div');
+    out.className = 'diag-out';
+
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      btn.textContent = 'Checking storage…';
+      out.replaceChildren();
+      try {
+        const res = await fetch('/api/diag?live=1', { headers: withToken() });
+        const text = await res.text();
+        let data = null;
+        try { data = JSON.parse(text); } catch { /* not JSON */ }
+
+        if (!data) {
+          out.textContent = `Diagnostics unavailable (HTTP ${res.status}). If this is a fresh deploy, redeploy the site so /api/diag exists.`;
+        } else {
+          const lines = (data.providers || []).map((p) =>
+            p.reachable
+              ? `${p.label}: reachable (HTTP ${p.status}, ${p.ms} ms)`
+              : `${p.label}: unreachable — ${p.error}`
+          );
+          if (data.liveUpload) {
+            lines.push(
+              data.liveUpload.ok
+                ? `Test upload: OK via ${data.liveUpload.provider}`
+                : `Test upload: failed — ${data.liveUpload.error}`
+            );
+          }
+          const ul = document.createElement('ul');
+          for (const line of lines) {
+            const li = document.createElement('li');
+            li.textContent = line;
+            ul.appendChild(li);
+          }
+          out.replaceChildren(ul);
+        }
+      } catch (err) {
+        out.textContent = `Diagnostics request failed: ${(err && err.message) || 'network error'}`;
+      }
+      btn.disabled = false;
+      btn.textContent = 'Run diagnostics again';
+    });
+
+    wrap.append(btn, out);
+    return wrap;
   }
 
   function showResult(kind, title, url, meta = {}) {
@@ -156,7 +249,7 @@
         body.appendChild(img);
       }
 
-      if (meta.name || meta.size) {
+      if (meta.name || meta.size || meta.expires) {
         const m = document.createElement('p');
         m.className = 'result-meta';
         m.textContent = [meta.name, meta.size && fmtBytes(meta.size), meta.expires].filter(Boolean).join(' · ');
@@ -167,6 +260,7 @@
       p.className = 'result-meta';
       p.textContent = url;
       body.appendChild(p);
+      body.appendChild(diagnosticsBlock());
     }
 
     resultBox.replaceChildren(head, body);
@@ -357,9 +451,10 @@
         };
 
         xhr.onload = () => {
+          const text = xhr.responseText || '';
           let data;
-          try { data = JSON.parse(xhr.responseText); } catch { data = null; }
-          resolve({ status: xhr.status, data });
+          try { data = JSON.parse(text); } catch { data = null; }
+          resolve({ status: xhr.status, data, text });
         };
         xhr.onerror = () => reject(new Error('Network error'));
         xhr.ontimeout = () => reject(new Error('Request timed out'));
@@ -393,12 +488,16 @@
           permanent: 'permanent link',
         };
         const expiry = expiryMap[res.data.expires] || expiryMap[lifeSelect.value] || '';
+        const notes = [];
+        if (optimized) notes.push('image auto-optimized');
+        if (res.data.note) notes.push(res.data.note);
+        else if (expiry) notes.push(expiry);
 
         showResult('ok', 'Upload complete!', url, {
           name: entry.name,
           size: entry.size,
           preview,
-          expires: optimized ? 'image auto-optimized' : expiry,
+          expires: notes.join(' · '),
         });
       } else if (res.status === 403) {
         const key = prompt(res.data && res.data.error
@@ -412,7 +511,7 @@
         }
         showResult('error', 'Private site', 'No access key — upload blocked.', '');
       } else {
-        showResult('error', 'Upload failed', (res.data && res.data.error) || 'Something went wrong. Please try again.');
+        showResult('error', 'Upload failed', explainFailure(res.status, res.data, res.text));
       }
     } catch (err) {
       hideProgress();
@@ -431,14 +530,16 @@
         headers: { 'Content-Type': 'application/json', ...withToken() },
         body: JSON.stringify({ url }),
       });
-      const data = await res.json().catch(() => null);
+      const rawText = await res.text();
+      let data = null;
+      try { data = JSON.parse(rawText); } catch { /* platform error page, not JSON */ }
       hideProgress();
 
       if (res.ok && data && data.ok) {
         let preview = null;
         if (/\.(png|jpe?g|webp|gif|avif|bmp)$/i.test(data.url)) preview = data.url;
         addToHistory({ url: data.url, name: nameFromUrl(data.url), size: 0, at: Date.now(), preview });
-        showResult('ok', 'Import complete!', data.url, { preview });
+        showResult('ok', 'Import complete!', data.url, { preview, expires: data.note || '' });
       } else if (res.status === 403) {
         const key = prompt((data && data.error) || 'Enter your access key:');
         if (key) {
@@ -448,7 +549,7 @@
         }
         showResult('error', 'Private site', 'No access key — import blocked.');
       } else {
-        showResult('error', 'Import failed', (data && data.error) || 'Could not fetch that file.');
+        showResult('error', 'Import failed', explainFailure(res.status, data, rawText));
       }
     } catch (err) {
       hideProgress();
