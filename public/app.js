@@ -1,18 +1,12 @@
 (() => {
   'use strict';
 
-  const UPLOAD_ENDPOINT = 'https://upload.gofile.io/uploadfile';
+  const UPLOAD_ENDPOINT = '/api/upload';
+  const MAX_UPLOAD_BYTES = 100_000_000;
   const HISTORY_KEY = 'yori_upload_history';
-  const GUEST_TOKEN_KEY = 'yori_gofile_guest_token';
   const HISTORY_LIMIT = 10;
-  const TRUSTED_HOSTS = new Set([
-    'gofile.io',
-    'files.catbox.moe',
-    'litter.catbox.moe',
-    'tmpfiles.org',
-    '0x0.st',
-    'storage.to',
-  ]);
+  const TRUSTED_HOST = 'files.catbox.moe';
+  const BLOCKED_EXTENSIONS = new Set(['exe', 'scr', 'cpl', 'jar']);
 
   const byId = (id) => document.getElementById(id);
   const homeView = byId('homeView');
@@ -83,32 +77,6 @@
     toast.classList.add('is-visible');
     clearTimeout(showToast.timer);
     showToast.timer = setTimeout(() => toast.classList.remove('is-visible'), 2200);
-  }
-
-  function readGuestToken() {
-    try {
-      const token = localStorage.getItem(GUEST_TOKEN_KEY) || '';
-      return /^[A-Za-z0-9._~-]{16,512}$/.test(token) ? token : '';
-    } catch {
-      return '';
-    }
-  }
-
-  function saveGuestToken(token) {
-    if (typeof token !== 'string' || !/^[A-Za-z0-9._~-]{16,512}$/.test(token)) return;
-    try {
-      localStorage.setItem(GUEST_TOKEN_KEY, token);
-    } catch {
-      // A guest token is optional; uploads still work without localStorage.
-    }
-  }
-
-  function clearGuestToken() {
-    try {
-      localStorage.removeItem(GUEST_TOKEN_KEY);
-    } catch {
-      // Nothing else is required when localStorage is unavailable.
-    }
   }
 
   async function copyText(text) {
@@ -185,14 +153,10 @@
     return null;
   }
 
-  function trustedUrl(value, gofileOnly = false) {
+  function trustedUrl(value) {
     try {
       const url = new URL(value);
-      if (url.protocol !== 'https:') return null;
-      const host = url.hostname.toLowerCase();
-      const isGofile = host === 'gofile.io' || host.endsWith('.gofile.io');
-      if (gofileOnly && !isGofile) return null;
-      if (!isGofile && !TRUSTED_HOSTS.has(host)) return null;
+      if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== TRUSTED_HOST) return null;
       return url.href;
     } catch {
       return null;
@@ -239,13 +203,14 @@
   }
 
   function explainUploadFailure(status, response) {
-    const code = response && response.status;
     if (!navigator.onLine || status === 0) return 'Connection lost. Check your network and retry.';
-    if (status === 413) return 'The storage service rejected this file as too large.';
-    if (status === 429 || code === 'error-rateLimit') return 'Upload limit reached. Wait a moment and retry.';
-    if (code === 'error-limits') return 'The guest storage limit was reached. Try again later.';
+    if (response && typeof response.error === 'string' && response.error.trim()) {
+      return response.error.trim().slice(0, 240);
+    }
+    if (status === 413) return 'Maximum file size is 100 MB.';
+    if (status === 429) return 'Too many uploads. Wait a minute and retry.';
+    if (status === 503) return 'Permanent storage is not configured.';
     if (status >= 500) return 'Storage is temporarily unavailable. Retry in a moment.';
-    if (code && code !== 'ok') return `GoFile returned ${String(code).replace(/^error-/, '')}.`;
     return 'The upload could not be completed. Please retry.';
   }
 
@@ -302,11 +267,28 @@
     byId('outcomeTitle').focus({ preventScroll: true });
   }
 
-  function uploadFile(file, ignoreSavedToken = false) {
+  function uploadFile(file) {
     if (!(file instanceof File)) return;
     if (file.size < 1) {
       activeFile = null;
       showError('This file is empty.', false);
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      activeFile = file;
+      showError('Maximum file size is 100 MB.', false);
+      return;
+    }
+
+    const extension = file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : '';
+    if (BLOCKED_EXTENSIONS.has(extension) || extension.startsWith('doc')) {
+      activeFile = file;
+      showError(`Catbox does not accept .${extension} files.`, false);
+      return;
+    }
+    if (extension === 'gif' && file.size > 20_000_000) {
+      activeFile = file;
+      showError('Catbox limits GIF files to 20 MB.', false);
       return;
     }
     if (!navigator.onLine) {
@@ -326,15 +308,14 @@
     setView('progress');
 
     const version = ++requestVersion;
-    const form = new FormData();
-    const guestToken = ignoreSavedToken ? '' : readGuestToken();
-    form.append('file', file, file.name || 'file');
-    if (guestToken) form.append('token', guestToken);
-
     const request = new XMLHttpRequest();
     activeRequest = request;
     request.open('POST', UPLOAD_ENDPOINT);
     request.responseType = 'text';
+    request.setRequestHeader('Content-Type', 'application/octet-stream');
+    request.setRequestHeader('x-yori-upload', '1');
+    request.setRequestHeader('x-file-name', encodeURIComponent(displayName(file.name)));
+    request.setRequestHeader('x-file-type', file.type || 'application/octet-stream');
 
     request.upload.addEventListener('progress', (event) => {
       if (version !== requestVersion) return;
@@ -343,7 +324,7 @@
         return;
       }
       const percent = Math.min(95, (event.loaded / event.total) * 95);
-      setProgress(percent, event.loaded === event.total ? 'Processing' : 'Uploading');
+      setProgress(percent, event.loaded === event.total ? 'Saving permanently' : 'Uploading');
     });
 
     request.addEventListener('load', () => {
@@ -356,15 +337,11 @@
         response = null;
       }
 
-      const providerUrl = response && response.data && trustedUrl(response.data.downloadPage, true);
-      if (request.status >= 200 && request.status < 300 && response && response.status === 'ok' && providerUrl) {
-        saveGuestToken(response.data.guestToken);
+      const providerUrl = response && trustedUrl(response.url);
+      if (request.status >= 200 && request.status < 300 && response && response.ok === true && response.permanent === true && providerUrl) {
         showSuccess(file, providerUrl);
-      } else if (guestToken && response && response.status === 'error-token') {
-        clearGuestToken();
-        uploadFile(file, true);
       } else {
-        showError(explainUploadFailure(request.status, response), true);
+        showError(explainUploadFailure(request.status, response), request.status !== 415);
       }
     });
 
@@ -380,7 +357,7 @@
       showError('Upload cancelled.', true);
     });
 
-    request.send(form);
+    request.send(file);
   }
 
   function readHistory() {
@@ -486,7 +463,7 @@
       return;
     }
 
-    const provider = new URL(target).hostname.endsWith('gofile.io') ? 'Hosted by GoFile' : 'Hosted externally';
+    const provider = 'Hosted permanently by Catbox';
     byId('viewerKind').textContent = fileKind(entry.name, entry.type);
     byId('viewerName').textContent = entry.name;
     byId('viewerMeta').textContent = [entry.size ? formatBytes(entry.size) : '', provider].filter(Boolean).join(' · ');

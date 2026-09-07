@@ -1,6 +1,9 @@
 # Local secrets / environment
 .env
 .env.*
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
 
 # Editor / OS
 .vscode/
@@ -8,7 +11,7 @@
 .DS_Store
 Thumbs.db
 
-# Local Netlify / tooling
-.netlify/
+# Cloudflare / local tooling
+.wrangler/
 node_modules/
 dist/
