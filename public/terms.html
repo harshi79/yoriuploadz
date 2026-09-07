@@ -3,48 +3,59 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Terms of Use — YoriUpload</title>
   <meta name="robots" content="noindex" />
+  <meta name="theme-color" content="#0d0f0e" />
+  <title>Terms — Yori</title>
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <main style="max-width:720px;margin:0 auto;">
-    <p><a href="/" style="color:var(--accent-2);">← Back to YoriUpload</a></p>
+  <header class="site-header shell">
+    <a class="brand" href="/" aria-label="Yori home">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M7 8.5 16 17l9-8.5M16 17v8" /></svg>
+      <span class="brand-word">YORI</span>
+      <span class="brand-slash">/</span>
+      <span class="brand-product">TERMS</span>
+    </a>
+    <a class="network-state" href="/">HOME</a>
+  </header>
 
-    <h1>Terms of Use</h1>
-    <p style="color:var(--text-dim);">Last updated: 2026-09-06 · YoriUpload</p>
+  <main class="static-page shell">
+    <article class="static-wrap">
+      <p class="static-kicker">LEGAL / 001</p>
+      <h1>Terms.</h1>
+      <p class="static-date">UPDATED 07 SEPTEMBER 2026</p>
 
-    <section style="margin-top:24px;line-height:1.7;color:var(--text);">
-      <h2 style="font-size:1.1rem;margin-bottom:6px;">1. The service</h2>
-      <p>
-        YoriUpload is a small, private file-sharing service. Uploading a file creates a
-        link that can be shared with other people. Links to temporary files expire
-        automatically; permanent links remain available while the service operates.
-      </p>
+      <section class="legal-section">
+        <h2>1. Service</h2>
+        <p>Yori is a browser interface for temporary file sharing. Files upload directly to GoFile; GoFile stores and delivers them under its <a href="https://gofile.io/terms" target="_blank" rel="noopener noreferrer">terms</a> and <a href="https://gofile.io/privacy" target="_blank" rel="noopener noreferrer">privacy policy</a>.</p>
+      </section>
 
-      <h2 style="font-size:1.1rem;margin:22px 0 6px;">2. Acceptable use</h2>
-      <p>
-        You agree not to upload content that is illegal in your jurisdiction or that violates
-        the rights of others — including, but not limited to, malware, stolen content,
-        child sexual abuse material, or content used to harass, defraud, or harm anyone.
-        We may remove content and block misuse at any time without notice.
-      </p>
+      <section class="legal-section">
+        <h2>2. Retention</h2>
+        <p>Guest storage is temporary. GoFile may remove inactive content without notice and does not guarantee a retention period for free uploads. Keep your own copy of every file.</p>
+      </section>
 
-      <h2 style="font-size:1.1rem;margin:22px 0 6px;">3. No account required</h2>
-      <p>
-        No account is needed to upload. We do not require personal information, do not use
-        tracking or advertising, and do not read your files. This service is operated for
-        a limited group of users; it is not a permanent archive.
-      </p>
+      <section class="legal-section">
+        <h2>3. Acceptable use</h2>
+        <p>Do not upload illegal, abusive, infringing, deceptive, or malicious content. Do not attempt to disrupt the service, bypass provider limits, or distribute malware. Content may be removed and access may be blocked.</p>
+      </section>
 
-      <h2 style="font-size:1.1rem;margin:22px 0 6px;">4. Availability</h2>
-      <p>
-        The service is provided "as is", without warranty of any kind. Links may become
-        unavailable, especially temporary ones. You are responsible for keeping your own
-        copies of important files.
-      </p>
-    </section>
+      <section class="legal-section">
+        <h2>4. Local data</h2>
+        <p>Yori stores a GoFile guest-session token and recent link metadata in your browser only. Clearing recent links removes that local history, not the hosted file. GoFile receives the uploaded file and technical request data needed to operate its service.</p>
+      </section>
+
+      <section class="legal-section">
+        <h2>5. Availability</h2>
+        <p>The service is provided as is, without warranty. Uploads and links may fail, expire, or become unavailable. Do not use Yori as your only copy or as permanent storage.</p>
+      </section>
+    </article>
   </main>
+
+  <footer class="site-footer shell">
+    <span>© 2026 YORI</span>
+    <nav aria-label="Footer"><a href="/">Upload</a></nav>
+  </footer>
 </body>
 </html>

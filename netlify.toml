@@ -1,36 +1,34 @@
-# YoriUpload — Netlify configuration
-
 [build]
   publish = "public"
-  functions = "netlify/functions"
 
-# Rewrite the upload endpoint logic.
+# Yori share links are rendered by the static client.
 [[redirects]]
-  from = "/api/upload"
-  to = "/.netlify/functions/upload"
-  status = 200
-
-[[redirects]]
-  from = "/api/import"
-  to = "/.netlify/functions/import-url"
-  status = 200
-
-# Deployment self-check: which storage provider is reachable from this site?
-[[redirects]]
-  from = "/api/diag"
-  to = "/.netlify/functions/diag"
-  status = 200
-
-# SPA-style fallback for any other path (functions are matched first).
-[[redirects]]
-  from = "/*"
+  from = "/v/*"
   to = "/index.html"
   status = 200
 
 [[headers]]
   for = "/*"
   [headers.values]
-    X-Frame-Options = "DENY"
-    X-Content-Type-Options = "nosniff"
+    Content-Security-Policy = "default-src 'self'; connect-src 'self' https://upload.gofile.io https://*.gofile.io; img-src 'self' blob: data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests"
+    Cross-Origin-Opener-Policy = "same-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
     Referrer-Policy = "no-referrer"
-    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+
+[[headers]]
+  for = "/app.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/styles.css"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/icon.svg"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"

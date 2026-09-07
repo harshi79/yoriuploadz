@@ -1,7 +1,6 @@
 # Local secrets / environment
 .env
 .env.*
-!.env.example
 
 # Editor / OS
 .vscode/

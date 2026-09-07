@@ -1,13 +1,13 @@
 {
   "name": "yoriupload",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "YoriUpload — fast, private file sharing.",
+  "description": "A focused, account-free file sharing interface.",
   "scripts": {
-    "dev": "npx netlify-cli dev",
-    "dev:local": "node scripts/dev-server.js",
-    "dev:offline": "MOCK_UPSTREAM=1 node scripts/dev-server.js",
-    "build": "echo 'static frontend, nothing to build'"
+    "dev": "node scripts/dev-server.js",
+    "dev:netlify": "npx netlify-cli dev",
+    "build": "npm run check",
+    "check": "node --check public/app.js && node --check scripts/dev-server.js"
   },
   "engines": {
     "node": ">=18"
