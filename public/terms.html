@@ -3,48 +3,59 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Terms of Use — YoriUpload</title>
   <meta name="robots" content="noindex" />
+  <meta name="theme-color" content="#10110f" />
+  <title>Terms — Yori</title>
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <main style="max-width:720px;margin:0 auto;">
-    <p><a href="/" style="color:var(--accent-2);">← Back to YoriUpload</a></p>
+  <header class="site-header shell">
+    <a class="brand" href="/" aria-label="Yori home">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M7 8.5 16 17l9-8.5M16 17v8" /></svg>
+      <span class="brand-word">YORI</span>
+      <span class="brand-slash">/</span>
+      <span class="brand-product">TERMS</span>
+    </a>
+    <a class="network-state" href="/">HOME</a>
+  </header>
 
-    <h1>Terms of Use</h1>
-    <p style="color:var(--text-dim);">Last updated: 2026-09-06 · YoriUpload</p>
+  <main class="static-page shell">
+    <article class="static-wrap">
+      <p class="static-kicker">LEGAL / 001</p>
+      <h1>Terms.</h1>
+      <p class="static-date">UPDATED 07 SEPTEMBER 2026</p>
 
-    <section style="margin-top:24px;line-height:1.7;color:var(--text);">
-      <h2 style="font-size:1.1rem;margin-bottom:6px;">1. The service</h2>
-      <p>
-        YoriUpload is a small, private file-sharing service. Uploading a file creates a
-        link that can be shared with other people. Links to temporary files expire
-        automatically; permanent links remain available while the service operates.
-      </p>
+      <section class="legal-section">
+        <h2>1. Service</h2>
+        <p>Yori sends files through its protected server to an operator-owned Catbox account. Visitors do not need an account. Catbox stores the files under its <a href="https://catbox.moe/faq.php" target="_blank" rel="noopener noreferrer">rules and policy</a>; Yori relays downloads without sending visitors to Catbox.</p>
+      </section>
 
-      <h2 style="font-size:1.1rem;margin:22px 0 6px;">2. Acceptable use</h2>
-      <p>
-        You agree not to upload content that is illegal in your jurisdiction or that violates
-        the rights of others — including, but not limited to, malware, stolen content,
-        child sexual abuse material, or content used to harass, defraud, or harm anyone.
-        We may remove content and block misuse at any time without notice.
-      </p>
+      <section class="legal-section">
+        <h2>2. Retention</h2>
+        <p>Catbox currently describes account-associated uploads as permanent, with no scheduled expiry or inactivity timer. Permanent does not mean guaranteed forever: Catbox may remove content for policy, legal, abuse, account, or service reasons. Keep your own copy.</p>
+      </section>
 
-      <h2 style="font-size:1.1rem;margin:22px 0 6px;">3. No account required</h2>
-      <p>
-        No account is needed to upload. We do not require personal information, do not use
-        tracking or advertising, and do not read your files. This service is operated for
-        a limited group of users; it is not a permanent archive.
-      </p>
+      <section class="legal-section">
+        <h2>3. Acceptable use</h2>
+        <p>Do not upload illegal, abusive, infringing, deceptive, malicious, or private material you are not allowed to publish. Catbox does not accept .exe, .scr, .cpl, .doc*, or .jar files. Do not evade limits, automate abuse, or disrupt either service. Catbox requires prior approval for commercial services and does not permit external video streaming from its files.</p>
+      </section>
 
-      <h2 style="font-size:1.1rem;margin:22px 0 6px;">4. Availability</h2>
-      <p>
-        The service is provided "as is", without warranty of any kind. Links may become
-        unavailable, especially temporary ones. You are responsible for keeping your own
-        copies of important files.
-      </p>
-    </section>
+      <section class="legal-section">
+        <h2>4. Files and data</h2>
+        <p>Anyone with a Yori file link can access its download. Catbox receives the file and request data needed to host it; Render processes Yori's uploads and relayed downloads. Yori keeps recent-link metadata only in your browser. Clearing that history does not delete the hosted file.</p>
+      </section>
+
+      <section class="legal-section">
+        <h2>5. Availability</h2>
+        <p>Yori is provided as is, without warranty. Uploads and links can fail or become unavailable. Access may be rate-limited or blocked, and content that violates these terms may be removed from the operator account.</p>
+      </section>
+    </article>
   </main>
+
+  <footer class="site-footer shell">
+    <span>© 2026 YORI</span>
+    <nav aria-label="Footer"><a href="/">Upload</a></nav>
+  </footer>
 </body>
 </html>

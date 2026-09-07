@@ -4,15 +4,27 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex" />
-  <title>Not found — YoriUpload</title>
+  <meta name="theme-color" content="#10110f" />
+  <title>Not found — Yori</title>
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <main style="max-width:560px;margin:0 auto;text-align:center;padding-top:15vh;">
-    <h1 style="font-size:3rem;margin-bottom:10px;">404</h1>
-    <p style="color:var(--text-dim);">This page doesn't exist.</p>
-    <p><a href="/" style="color:var(--accent-2);">Go home</a></p>
+  <header class="site-header shell">
+    <a class="brand" href="/" aria-label="Yori home">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M7 8.5 16 17l9-8.5M16 17v8" /></svg>
+      <span class="brand-word">YORI</span>
+    </a>
+  </header>
+
+  <main class="static-page shell">
+    <div class="static-wrap">
+      <div class="error-code">404</div>
+      <h1>Page not found.</h1>
+      <a class="action action-accent static-action" href="/">Go home</a>
+    </div>
   </main>
+
+  <footer class="site-footer shell"><span>© 2026 YORI</span></footer>
 </body>
 </html>

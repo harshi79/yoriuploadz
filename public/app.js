@@ -1,741 +1,627 @@
-/* YoriUpload — client logic */
 (() => {
   'use strict';
 
-  const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // matches the relay limit
-  const KEY_STORAGE = 'yori_upload_key';
-  const HISTORY_STORAGE = 'yori_upload_history';
-  const HISTORY_MAX = 12;
+  const UPLOAD_ENDPOINT = '/api/upload';
+  const MAX_UPLOAD_BYTES = 200_000_000;
+  const HISTORY_KEY = 'yori_upload_history_v3';
+  const HISTORY_LIMIT = 10;
+  const TRUSTED_HOST = 'files.catbox.moe';
+  const BLOCKED_EXTENSIONS = new Set(['exe', 'scr', 'cpl', 'jar']);
 
-  const $ = (id) => document.getElementById(id);
+  const byId = (id) => document.getElementById(id);
+  const homeView = byId('homeView');
+  const viewerView = byId('viewerView');
+  const fileInput = byId('fileInput');
+  const dropzone = byId('dropzone');
+  const idleView = byId('idleView');
+  const progressView = byId('progressView');
+  const outcomeView = byId('outcomeView');
+  const panelState = byId('panelState');
+  const uploader = byId('uploader');
+  const networkState = byId('networkState');
+  const networkText = byId('networkText');
+  const toast = byId('toast');
 
-  const dropzone = $('dropzone');
-  const fileInput = $('fileInput');
-  const browseBtn = $('browseBtn');
-  const lifeSelect = $('life-select');
-  const importForm = $('importForm');
-  const importUrl = $('importUrl');
-  const progressWrap = $('progress');
-  const progressBar = $('progressBar');
-  const progressText = $('progressText');
-  const resultBox = $('result');
-  const recentSection = $('recentSection');
-  const recentList = $('recentList');
-  const toast = $('toast');
+  let activeFile = null;
+  let activeRequest = null;
+  let requestVersion = 0;
+  let previewUrl = '';
+  let currentEntry = null;
+  let dragDepth = 0;
+  let downloadTimer = 0;
 
-  let uploadToken = null;
-
-  /* ------------------------------ helpers ------------------------------ */
-
-  // Share links are served from this site (the file itself is fetched by
-  // the viewer page), so the URL people share looks like our own domain.
-  function toB64(s) {
-    return btoa(unescape(encodeURIComponent(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  function formatBytes(value) {
+    const bytes = Number(value);
+    if (!Number.isFinite(bytes) || bytes < 1) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+    const amount = bytes / 1024 ** index;
+    const digits = amount >= 100 || index === 0 ? 0 : amount >= 10 ? 1 : 2;
+    return `${amount.toFixed(digits)} ${units[index]}`;
   }
-  function fromB64(s) {
-    return decodeURIComponent(escape(atob(s.replace(/-/g, '+').replace(/_/g, '/'))));
+
+  function formatDate(value) {
+    const date = new Date(Number(value));
+    if (Number.isNaN(date.getTime())) return '';
+    return new Intl.DateTimeFormat(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(date);
   }
-  function shareLink(url) {
-    return `${location.origin}/v/${toB64(url)}`;
+
+  function fileKind(name, type = '') {
+    const mime = String(type).toLowerCase();
+    if (mime.startsWith('image/')) return 'IMG';
+    if (mime.startsWith('video/')) return 'VID';
+    if (mime.startsWith('audio/')) return 'AUD';
+    if (mime === 'application/pdf') return 'PDF';
+
+    const cleanName = String(name || '');
+    const dot = cleanName.lastIndexOf('.');
+    const extension = dot > -1 ? cleanName.slice(dot + 1).replace(/[^a-z0-9]/gi, '') : '';
+    return extension ? extension.slice(0, 4).toUpperCase() : 'FILE';
   }
-  function urlBasename(u) {
-    try {
-      const seg = decodeURIComponent(new URL(u).pathname.split('/').pop() || '').trim();
-      return seg || 'file';
-    } catch {
-      return 'file';
-    }
+
+  function displayName(value) {
+    const cleaned = String(value || '')
+      .normalize('NFC')
+      .replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, '')
+      .replace(/[\\/]+/g, '-')
+      .trim();
+    return Array.from(cleaned || 'Shared file').slice(0, 180).join('');
   }
-  async function copyText(text, label) {
+
+  function showToast(message) {
+    toast.textContent = message;
+    toast.classList.add('is-visible');
+    clearTimeout(showToast.timer);
+    showToast.timer = setTimeout(() => toast.classList.remove('is-visible'), 2200);
+  }
+
+  async function copyText(text) {
     try {
       await navigator.clipboard.writeText(text);
-      showToast(label || 'Copied to clipboard');
+      showToast('Link copied');
       return true;
     } catch {
-      prompt('Copy the link:', text);
-      return false;
-    }
-  }
-
-  function fmtBytes(n) {
-    if (!Number.isFinite(n) || n <= 0) return '0 B';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let i = 0;
-    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
-    return `${n >= 10 ? Math.round(n) : n.toFixed(1)} ${units[i]}`;
-  }
-
-  function fmtTime(ts) {
-    const d = new Date(ts);
-    const now = new Date();
-    const sameDay = d.toDateString() === now.toDateString();
-    const hh = String(d.getHours()).padStart(2, '0');
-    const mm = String(d.getMinutes()).padStart(2, '0');
-    return sameDay
-      ? `today ${hh}:${mm}`
-      : `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} ${hh}:${mm}`;
-  }
-
-  function showToast(msg, ms = 2600) {
-    toast.textContent = msg;
-    toast.classList.add('show');
-    clearTimeout(showToast._t);
-    showToast._t = setTimeout(() => toast.classList.remove('show'), ms);
-  }
-
-  /**
-   * Turn any failure into something a human can act on.
-   *
-   * The relay answers JSON, but the platform in front of it does not: when a
-   * function times out or crashes, Netlify replies with plain text or HTML and
-   * a 502/504. Those used to fall through to "Something went wrong", which is
-   * why failures were impossible to diagnose from the UI.
-   */
-  function explainFailure(status, data, rawText) {
-    if (data && data.error) {
-      const attempts = Array.isArray(data.attempts) ? data.attempts.filter((a) => a && a.error) : [];
-      const trail = attempts.length
-        ? ` (tried ${attempts.map((a) => `${a.provider}: ${a.error || 'HTTP ' + a.status}`).join('; ')})`
-        : '';
-      return data.error + trail;
-    }
-
-    const snippet = String(rawText || '')
-      .replace(/<[^>]*>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 180);
-
-    if (!status) return 'Network error — the request never reached the server. Check your connection and try again.';
-    if (status === 413) return 'That file is too large for this deployment (max 4 MB).';
-    if (status === 429) return 'Too many uploads in a short time. Wait a minute and try again.';
-    if (status === 504 || status === 502) {
-      return `The upload relay could not reach storage (HTTP ${status})${snippet ? ` — ${snippet}` : ''}. ` +
-        'This is usually a slow or blocked storage provider; try a smaller file or retry in a moment.';
-    }
-    return `Upload relay error (HTTP ${status})${snippet ? ` — ${snippet}` : ''}`;
-  }
-
-  function setProgress(pct, label) {
-    progressWrap.classList.remove('hidden');
-    progressBar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
-    progressText.textContent = label;
-  }
-
-  function hideProgress() {
-    progressWrap.classList.add('hidden');
-    progressBar.style.width = '0%';
-  }
-
-  /**
-   * "Upload failed" is useless on its own, so every error offers a one-click
-   * self-check: /api/diag reports, from inside the deployed function, which
-   * storage provider is actually reachable and what it said.
-   */
-  function diagnosticsBlock() {
-    const wrap = document.createElement('div');
-    wrap.className = 'diag';
-
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'btn btn-ghost';
-    btn.textContent = 'Run diagnostics';
-    const out = document.createElement('div');
-    out.className = 'diag-out';
-
-    btn.addEventListener('click', async () => {
-      btn.disabled = true;
-      btn.textContent = 'Checking storage…';
-      out.replaceChildren();
+      const field = document.createElement('textarea');
+      field.value = text;
+      field.setAttribute('readonly', '');
+      field.className = 'clipboard-fallback';
+      document.body.appendChild(field);
+      field.select();
+      let copied = false;
       try {
-        const res = await fetch('/api/diag?live=1', { headers: withToken() });
-        const text = await res.text();
-        let data = null;
-        try { data = JSON.parse(text); } catch { /* not JSON */ }
-
-        if (!data) {
-          out.textContent = `Diagnostics unavailable (HTTP ${res.status}). If this is a fresh deploy, redeploy the site so /api/diag exists.`;
-        } else {
-          const lines = (data.providers || []).map((p) =>
-            p.reachable
-              ? `${p.label}: reachable (HTTP ${p.status}, ${p.ms} ms)`
-              : `${p.label}: unreachable — ${p.error}`
-          );
-          if (data.liveUpload) {
-            lines.push(
-              data.liveUpload.ok
-                ? `Test upload: OK via ${data.liveUpload.provider}`
-                : `Test upload: failed — ${data.liveUpload.error}`
-            );
-          }
-          const ul = document.createElement('ul');
-          for (const line of lines) {
-            const li = document.createElement('li');
-            li.textContent = line;
-            ul.appendChild(li);
-          }
-          out.replaceChildren(ul);
-        }
-      } catch (err) {
-        out.textContent = `Diagnostics request failed: ${(err && err.message) || 'network error'}`;
+        copied = document.execCommand('copy');
+      } catch {
+        copied = false;
       }
-      btn.disabled = false;
-      btn.textContent = 'Run diagnostics again';
+      field.remove();
+      showToast(copied ? 'Link copied' : 'Copy unavailable');
+      return copied;
+    }
+  }
+
+  function trustedSharePath(value) {
+    const path = String(value || '');
+    return /^\/v\/[A-Za-z0-9_-]{1,4096}\.[A-Za-z0-9_-]{43}$/.test(path) ? path : '';
+  }
+
+  function makeShareLink(entry) {
+    const sharePath = entry && trustedSharePath(entry.sharePath);
+    return sharePath ? `${location.origin}${sharePath}` : '';
+  }
+
+  function base64UrlToBytes(value) {
+    const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+    const binary = atob(normalized + '='.repeat((4 - (normalized.length % 4)) % 4));
+    return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  }
+
+  function decodeSharePayload(value) {
+    const match = String(value || '').match(/^([A-Za-z0-9_-]{1,4096})\.([A-Za-z0-9_-]{43})$/);
+    if (!match) return null;
+    try {
+      const decoded = new TextDecoder().decode(base64UrlToBytes(match[1]));
+      const parsed = JSON.parse(decoded);
+      if (parsed && typeof parsed.u === 'string') {
+        return {
+          url: parsed.u,
+          name: displayName(parsed.n),
+          size: Number(parsed.s) || 0,
+          type: String(parsed.t || '').slice(0, 100),
+        };
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+
+  function trustedUrl(value) {
+    try {
+      const url = new URL(value);
+      if (
+        url.protocol !== 'https:' ||
+        url.hostname.toLowerCase() !== TRUSTED_HOST ||
+        url.port ||
+        url.username ||
+        url.password ||
+        url.search ||
+        url.hash ||
+        !/^\/[A-Za-z0-9._-]+$/.test(url.pathname)
+      ) return null;
+      return url.href;
+    } catch {
+      return null;
+    }
+  }
+
+  function setView(view) {
+    idleView.hidden = view !== 'idle';
+    progressView.hidden = view !== 'progress';
+    outcomeView.hidden = view !== 'outcome';
+    uploader.setAttribute('aria-busy', view === 'progress' ? 'true' : 'false');
+    panelState.textContent = view === 'progress' ? 'UPLOADING' : view === 'outcome' ? 'COMPLETE' : 'IDLE';
+  }
+
+  function clearPreview() {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = '';
+    byId('previewImage').removeAttribute('src');
+    byId('imagePreview').hidden = true;
+  }
+
+  function resetUploader() {
+    requestVersion += 1;
+    if (activeRequest) activeRequest.abort();
+    activeRequest = null;
+    activeFile = null;
+    currentEntry = null;
+    fileInput.value = '';
+    clearPreview();
+    byId('progressBar').value = 0;
+    byId('progressBar').textContent = '0%';
+    byId('progressPercent').textContent = '0%';
+    outcomeView.classList.remove('is-error');
+    setView('idle');
+    dropzone.focus({ preventScroll: true });
+  }
+
+  function setProgress(percent, text) {
+    const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
+    byId('progressBar').value = safePercent;
+    byId('progressBar').textContent = `${safePercent}%`;
+    byId('progressPercent').textContent = `${safePercent}%`;
+    byId('progressText').textContent = text;
+  }
+
+  function explainUploadFailure(status, response) {
+    if (!navigator.onLine || status === 0) return 'Connection lost. Check your network and retry.';
+    if (response && typeof response.error === 'string' && response.error.trim()) {
+      return response.error.trim().slice(0, 240);
+    }
+    if (status === 413) return 'Maximum file size is 200 MB.';
+    if (status === 429) return 'Too many uploads. Wait a minute and retry.';
+    if (status === 503) return 'Permanent storage is not configured.';
+    if (status >= 500) return 'Storage is temporarily unavailable. Retry in a moment.';
+    return 'The upload could not be completed. Please retry.';
+  }
+
+  function showError(message, canRetry = true) {
+    currentEntry = null;
+    clearPreview();
+    outcomeView.classList.add('is-error');
+    byId('outcomeLabel').textContent = 'UPLOAD FAILED';
+    byId('outcomeTitle').textContent = 'Not uploaded.';
+    byId('outcomeMessage').textContent = message;
+    byId('shareControl').hidden = true;
+    byId('openLink').hidden = true;
+    byId('shareLink').hidden = true;
+    byId('retryUpload').hidden = !canRetry || !activeFile;
+    byId('newUpload').textContent = 'Choose another';
+    setView('outcome');
+    panelState.textContent = 'ERROR';
+    byId('outcomeTitle').focus({ preventScroll: true });
+  }
+
+  function showSuccess(file, sharePath) {
+    const entry = {
+      sharePath,
+      name: displayName(file.name),
+      size: file.size,
+      type: file.type || '',
+      at: Date.now(),
+    };
+    const shareUrl = makeShareLink(entry);
+    currentEntry = entry;
+
+    outcomeView.classList.remove('is-error');
+    byId('outcomeLabel').textContent = 'UPLOAD COMPLETE';
+    byId('outcomeTitle').textContent = 'Link ready.';
+    byId('outcomeMessage').textContent = `${entry.name} · ${formatBytes(entry.size)}`;
+    byId('shareUrl').value = shareUrl;
+    byId('shareControl').hidden = false;
+    byId('openLink').hidden = false;
+    byId('openLink').href = shareUrl;
+    byId('retryUpload').hidden = true;
+    byId('newUpload').textContent = 'New upload';
+    byId('shareLink').hidden = typeof navigator.share !== 'function';
+
+    clearPreview();
+    if (entry.type.startsWith('image/') && entry.type !== 'image/svg+xml') {
+      previewUrl = URL.createObjectURL(file);
+      byId('previewImage').src = previewUrl;
+      byId('imagePreview').hidden = false;
+    }
+
+    addHistory(entry);
+    setProgress(100, 'Complete');
+    setView('outcome');
+    byId('outcomeTitle').focus({ preventScroll: true });
+  }
+
+  function uploadFile(file) {
+    if (!(file instanceof File)) return;
+    if (file.size < 1) {
+      activeFile = null;
+      showError('This file is empty.', false);
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      activeFile = file;
+      showError('Maximum file size is 200 MB.', false);
+      return;
+    }
+
+    const extension = file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : '';
+    if (BLOCKED_EXTENSIONS.has(extension) || extension.startsWith('doc')) {
+      activeFile = file;
+      showError(`Catbox does not accept .${extension} files.`, false);
+      return;
+    }
+    if (extension === 'gif' && file.size > 20_000_000) {
+      activeFile = file;
+      showError('Catbox limits GIF files to 20 MB.', false);
+      return;
+    }
+    if (!navigator.onLine) {
+      activeFile = file;
+      showError('You are offline. Reconnect and retry.', true);
+      return;
+    }
+
+    activeFile = file;
+    currentEntry = null;
+    clearPreview();
+    outcomeView.classList.remove('is-error');
+    byId('progressName').textContent = displayName(file.name);
+    byId('progressSize').textContent = formatBytes(file.size);
+    byId('progressKind').textContent = fileKind(file.name, file.type);
+    setProgress(0, 'Connecting');
+    setView('progress');
+
+    const version = ++requestVersion;
+    const request = new XMLHttpRequest();
+    activeRequest = request;
+    request.open('POST', UPLOAD_ENDPOINT);
+    request.responseType = 'text';
+    request.setRequestHeader('Content-Type', 'application/octet-stream');
+    request.setRequestHeader('x-yori-upload', '1');
+    request.setRequestHeader('x-file-name', encodeURIComponent(displayName(file.name)));
+    request.setRequestHeader('x-file-type', file.type || 'application/octet-stream');
+
+    request.upload.addEventListener('progress', (event) => {
+      if (version !== requestVersion) return;
+      if (!event.lengthComputable) {
+        setProgress(4, 'Uploading');
+        return;
+      }
+      const percent = Math.min(95, (event.loaded / event.total) * 95);
+      setProgress(percent, event.loaded === event.total ? 'Saving permanently' : 'Uploading');
     });
 
-    wrap.append(btn, out);
-    return wrap;
-  }
-
-  function showResult(kind, title, url, meta = {}) {
-    resultBox.classList.remove('hidden', 'error', 'ok');
-    resultBox.classList.add(kind === 'ok' ? 'ok' : 'error');
-
-    const head = document.createElement('div');
-    head.className = 'result-head';
-    const h = document.createElement('span');
-    h.className = 'result-title';
-    h.textContent = title;
-    head.appendChild(h);
-    if (kind === 'ok') {
-      const btns = document.createElement('div');
-      btns.style.display = 'flex';
-      btns.style.gap = '8px';
-      btns.style.flexWrap = 'wrap';
-      btns.style.justifyContent = 'flex-end';
-
-      const copyBtn = document.createElement('button');
-      copyBtn.type = 'button';
-      copyBtn.className = 'btn btn-primary';
-      copyBtn.textContent = 'Copy link';
-      copyBtn.addEventListener('click', async () => {
-        const ok = await copyText(shareLink(url), 'Link copied — ready to share');
-        if (ok) {
-          copyBtn.textContent = 'Copied ✓';
-          setTimeout(() => (copyBtn.textContent = 'Copy link'), 1600);
-        }
-      });
-      btns.appendChild(copyBtn);
-
-      const directBtn = document.createElement('button');
-      directBtn.type = 'button';
-      directBtn.className = 'btn btn-ghost';
-      directBtn.textContent = 'Direct';
-      directBtn.title = 'Copy the raw file URL';
-      directBtn.addEventListener('click', () => copyText(url, 'Direct link copied'));
-      btns.appendChild(directBtn);
-
-      head.appendChild(btns);
-    }
-
-    const body = document.createElement('div');
-    if (kind === 'ok') {
-      const row = document.createElement('div');
-      row.className = 'result-url';
-      const input = document.createElement('input');
-      input.value = shareLink(url);
-      input.readOnly = true;
-      input.title = 'Copy this to share the file';
-      input.addEventListener('click', () => input.select());
-      row.appendChild(input);
-      body.appendChild(row);
-
-      if (meta.preview) {
-        const img = document.createElement('img');
-        img.className = 'result-preview';
-        img.src = meta.preview;
-        img.alt = 'Uploaded image preview';
-        img.loading = 'lazy';
-        body.appendChild(img);
+    request.addEventListener('load', () => {
+      if (version !== requestVersion) return;
+      activeRequest = null;
+      let response = null;
+      try {
+        response = JSON.parse(request.responseText || '{}');
+      } catch {
+        response = null;
       }
 
-      if (meta.name || meta.size || meta.expires) {
-        const m = document.createElement('p');
-        m.className = 'result-meta';
-        m.textContent = [meta.name, meta.size && fmtBytes(meta.size), meta.expires].filter(Boolean).join(' · ');
-        body.appendChild(m);
+      const sharePath = response && trustedSharePath(response.sharePath);
+      if (request.status >= 200 && request.status < 300 && response && response.ok === true && response.permanent === true && sharePath) {
+        showSuccess(file, sharePath);
+      } else {
+        showError(explainUploadFailure(request.status, response), request.status !== 415);
       }
-    } else {
-      const p = document.createElement('p');
-      p.className = 'result-meta';
-      p.textContent = url;
-      body.appendChild(p);
-      body.appendChild(diagnosticsBlock());
-    }
+    });
 
-    resultBox.replaceChildren(head, body);
-    resultBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    request.addEventListener('error', () => {
+      if (version !== requestVersion) return;
+      activeRequest = null;
+      showError(explainUploadFailure(0, null), true);
+    });
+
+    request.addEventListener('abort', () => {
+      if (version !== requestVersion) return;
+      activeRequest = null;
+      showError('Upload cancelled.', true);
+    });
+
+    request.send(file);
   }
-
-  /* ----------------------------- access key ---------------------------- */
-
-  try {
-    uploadToken = localStorage.getItem(KEY_STORAGE);
-  } catch { /* storage unavailable */ }
-
-  function withToken(headers = {}) {
-    if (uploadToken) headers['x-access-key'] = uploadToken;
-    return headers;
-  }
-
-  /* ----------------------------- history ------------------------------- */
 
   function readHistory() {
     try {
-      const raw = JSON.parse(localStorage.getItem(HISTORY_STORAGE) || '[]');
-      return Array.isArray(raw) ? raw : [];
+      const stored = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+      if (!Array.isArray(stored)) return [];
+      return stored
+        .filter((item) => item && trustedSharePath(item.sharePath))
+        .map((item) => ({
+          sharePath: trustedSharePath(item.sharePath),
+          name: displayName(item.name),
+          size: Number(item.size) || 0,
+          type: String(item.type || '').slice(0, 100),
+          at: Number(item.at) || Date.now(),
+        }))
+        .slice(0, HISTORY_LIMIT);
     } catch {
       return [];
     }
   }
 
-  function addToHistory(entry) {
-    const list = readHistory();
-    list.unshift(entry);
+  function addHistory(entry) {
+    const history = readHistory().filter((item) => item.sharePath !== entry.sharePath);
+    history.unshift(entry);
     try {
-      localStorage.setItem(HISTORY_STORAGE, JSON.stringify(list.slice(0, HISTORY_MAX)));
-    } catch { /* quota exceeded — ignore */ }
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, HISTORY_LIMIT)));
+    } catch {
+      // Upload success should not depend on local history being available.
+    }
     renderHistory();
   }
 
   function renderHistory() {
-    const list = readHistory();
-    recentSection.hidden = list.length === 0;
-    recentList.replaceChildren();
+    const section = byId('recentSection');
+    const list = byId('recentList');
+    const history = readHistory();
+    section.hidden = history.length === 0;
+    list.replaceChildren();
 
-    for (const item of list) {
-      const li = document.createElement('li');
+    for (const item of history) {
+      const row = document.createElement('li');
+      row.className = 'recent-item';
 
-      let thumb = null;
-      if (item.preview) {
-        thumb = document.createElement('img');
-        thumb.className = 'recent-thumb';
-        thumb.src = item.preview;
-        thumb.alt = '';
-        thumb.loading = 'lazy';
-      } else {
-        thumb = document.createElement('span');
-        thumb.className = 'recent-thumb';
-        thumb.style.display = 'grid';
-        thumb.style.placeItems = 'center';
-        thumb.textContent = '📦';
-      }
+      const kind = document.createElement('span');
+      kind.className = 'recent-kind';
+      kind.textContent = fileKind(item.name, item.type);
 
       const info = document.createElement('div');
       info.className = 'recent-info';
       const name = document.createElement('span');
       name.className = 'recent-name';
-      name.textContent = item.name || 'file';
-      name.title = item.name || '';
-      const sub = document.createElement('span');
-      sub.className = 'recent-sub';
-      sub.textContent = `${fmtTime(item.at)} · ${fmtBytes(item.size)}`;
-      info.append(name, sub);
+      name.textContent = item.name;
+      name.title = item.name;
+      const time = document.createElement('span');
+      time.className = 'recent-time';
+      time.textContent = formatDate(item.at);
+      info.append(name, time);
+
+      const size = document.createElement('span');
+      size.className = 'recent-size';
+      size.textContent = formatBytes(item.size);
 
       const actions = document.createElement('div');
       actions.className = 'recent-actions';
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.textContent = 'Copy';
+      copy.setAttribute('aria-label', `Copy link for ${item.name}`);
+      copy.addEventListener('click', () => copyText(makeShareLink(item)));
+      const open = document.createElement('a');
+      open.href = makeShareLink(item);
+      open.textContent = 'View';
+      open.setAttribute('aria-label', `View download for ${item.name}`);
+      actions.append(copy, open);
 
-      const copyBtn = document.createElement('button');
-      copyBtn.type = 'button';
-      copyBtn.className = 'icon-btn';
-      copyBtn.title = 'Copy share link';
-      copyBtn.textContent = '🔗';
-      copyBtn.addEventListener('click', () => copyText(shareLink(item.url), 'Link copied — ready to share'));
-      actions.appendChild(copyBtn);
-
-      li.append(thumb, info, actions);
-      recentList.appendChild(li);
+      row.append(kind, info, size, actions);
+      list.appendChild(row);
     }
   }
 
-  /* ------------------------- image optimization ------------------------ */
-
-  function isImage(file) {
-    return file.type && file.type.startsWith('image/');
+  function updateNetworkState() {
+    const online = navigator.onLine;
+    networkState.classList.toggle('offline', !online);
+    networkText.textContent = online ? 'READY' : 'OFFLINE';
   }
 
-  /**
-   * If an image exceeds the size limit, downscale it to JPEG/WebP. If it
-   * still doesn't fit after downscaling, return null so the caller can
-   * decide whether to reject it.
-   */
-  async function optimizeImage(file) {
-    try {
-      const bitmap = await createImageBitmap(file);
-      let scale = Math.min(1, Math.sqrt(MAX_UPLOAD_BYTES / file.size));
-      let w = Math.round(bitmap.width * scale);
-      let h = Math.round(bitmap.height * scale);
-      if (w < 1 || h < 1) return null;
-
-      const canvas = new OffscreenCanvas(w, h);
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(bitmap, 0, 0, w, h);
-      bitmap.close();
-
-      const encoders = [
-        () => canvas.convertToBlob({ type: 'image/webp', quality: 0.82 }),
-        () => canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 }),
-      ];
-      for (const enc of encoders) {
-        const blob = await enc();
-        if (blob.size > 0 && blob.size <= MAX_UPLOAD_BYTES) {
-          return { blob, filename: file.name.replace(/\.(png|jpe?g|webp|bmp|avif|heic)$/i, '') + '.jpg' };
-        }
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  }
-
-  function isDirectFileUrl(value) {
-    try {
-      const u = new URL(value);
-      if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
-      const host = u.hostname.toLowerCase();
-      return !/^(www\.)?(facebook|fb|instagram|twitter|x|tiktok|youtube|youtu\.be|linkedin|reddit|threads|twitch)\./i.test(host);
-    } catch {
-      return false;
-    }
-  }
-
-  /* ------------------------------ upload ------------------------------- */
-
-  async function uploadFile(file) {
-    // Clear previous result.
-    resultBox.classList.add('hidden');
-
-    if (file.size > MAX_UPLOAD_BYTES) {
-      const blob = await optimizeImage(file);
-      if (!blob) {
-        showResult('error', 'File too large', `"${file.name}" is larger than 4 MB and could not be compressed enough. Try a smaller file.`);
-        hideProgress();
-        return;
-      }
-      return uploadBlob(blob.blob, blob.filename, true);
-    }
-
-    if (file.size === 0) {
-      showResult('error', 'Empty file', 'This file is empty, so there is nothing to upload.');
-      hideProgress();
-      return;
-    }
-
-    return uploadBlob(file, file.name, false);
-  }
-
-  async function uploadBlob(blob, filename, optimized) {
-    if (!filename) filename = 'file';
-    if (!(blob instanceof Blob)) return;
-    setProgress(4, `Uploading ${filename}…`);
+  async function prepareViewerDownload(payload) {
+    const button = byId('viewerDownload');
+    const status = byId('viewerStatus');
+    const fill = byId('countdownFill');
 
     try {
-      // Send the raw binary body so the relay can forward it as-is (no
-      // multipart wrapping here — the relay builds the upstream form).
-      const xhr = new XMLHttpRequest();
-      const promise = new Promise((resolve, reject) => {
-        xhr.open('POST', '/api/upload');
-        // Always binary content type so the Netlify gateway base64-encodes
-        // the raw body for the function; the real MIME goes in x-file-type.
-        xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-        xhr.setRequestHeader('x-file-name', encodeURIComponent(filename));
-        xhr.setRequestHeader('x-file-type', blob.type || 'application/octet-stream');
-        xhr.setRequestHeader('x-expiry', lifeSelect.value);
-        if (uploadToken) xhr.setRequestHeader('x-access-key', uploadToken);
-
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) {
-            const pct = 4 + (e.loaded / e.total) * 88;
-            setProgress(pct, `Uploading ${filename}… ${Math.round(pct)}%`);
-          }
-        };
-
-        xhr.onload = () => {
-          const text = xhr.responseText || '';
-          let data;
-          try { data = JSON.parse(text); } catch { data = null; }
-          resolve({ status: xhr.status, data, text });
-        };
-        xhr.onerror = () => reject(new Error('Network error'));
-        xhr.ontimeout = () => reject(new Error('Request timed out'));
-        xhr.timeout = 120000;
-        xhr.send(blob);
+      const response = await fetch(`/api/download-ticket?share=${encodeURIComponent(payload)}`, {
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
       });
-
-      const res = await promise;
-      hideProgress();
-
-      if (res.status === 200 && res.data && res.data.ok) {
-        const url = res.data.url;
-        const type = res.data.type || blob.type || '';
-        const isVector = type === 'image/svg+xml';
-        const preview = type.startsWith('image/') && !isVector ? url : null;
-
-        const entry = {
-          url,
-          name: res.data.name || filename,
-          size: res.data.size || Math.min(blob.size, MAX_UPLOAD_BYTES),
-          at: Date.now(),
-          preview,
-        };
-        addToHistory(entry);
-
-        const expiryMap = {
-          '1h': 'expires in 1 hour',
-          '12h': 'expires in 12 hours',
-          '24h': 'expires in 24 hours',
-          '72h': 'expires in 72 hours',
-          permanent: 'permanent link',
-        };
-        const expiry = expiryMap[res.data.expires] || expiryMap[lifeSelect.value] || '';
-        const notes = [];
-        if (optimized) notes.push('image auto-optimized');
-        if (res.data.note) notes.push(res.data.note);
-        else if (expiry) notes.push(expiry);
-
-        showResult('ok', 'Upload complete!', url, {
-          name: entry.name,
-          size: entry.size,
-          preview,
-          expires: notes.join(' · '),
-        });
-      } else if (res.status === 403) {
-        const key = prompt(res.data && res.data.error
-          ? `${res.data.error} Enter your access key:`
-          : 'This site is private. Enter your access key:');
-        if (key) {
-          uploadToken = key;
-          try { localStorage.setItem(KEY_STORAGE, key); } catch { /* ignore */ }
-          showToast('Key saved — retrying upload…');
-          return uploadBlob(blob, filename, optimized);
-        }
-        showResult('error', 'Private site', 'No access key — upload blocked.', '');
-      } else {
-        showResult('error', 'Upload failed', explainFailure(res.status, res.data, res.text));
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data || data.ok !== true) {
+        throw new Error(data && data.error ? data.error : 'Download could not be prepared.');
       }
-    } catch (err) {
-      hideProgress();
-      showResult('error', 'Upload failed', (err && err.message) || 'Network error. Check your connection and try again.');
-    }
-  }
-
-  /* --------------------------- url import ------------------------------ */
-
-  async function importFromUrl(url) {
-    resultBox.classList.add('hidden');
-    setProgress(10, 'Fetching file from URL…');
-    try {
-      const res = await fetch('/api/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...withToken() },
-        body: JSON.stringify({ url }),
-      });
-      const rawText = await res.text();
-      let data = null;
-      try { data = JSON.parse(rawText); } catch { /* platform error page, not JSON */ }
-      hideProgress();
-
-      if (res.ok && data && data.ok) {
-        let preview = null;
-        if (/\.(png|jpe?g|webp|gif|avif|bmp)$/i.test(data.url)) preview = data.url;
-        addToHistory({ url: data.url, name: nameFromUrl(data.url), size: 0, at: Date.now(), preview });
-        showResult('ok', 'Import complete!', data.url, { preview, expires: data.note || '' });
-      } else if (res.status === 403) {
-        const key = prompt((data && data.error) || 'Enter your access key:');
-        if (key) {
-          uploadToken = key;
-          try { localStorage.setItem(KEY_STORAGE, key); } catch { /* ignore */ }
-          return importFromUrl(url);
-        }
-        showResult('error', 'Private site', 'No access key — import blocked.');
-      } else {
-        showResult('error', 'Import failed', explainFailure(res.status, data, rawText));
+      if (typeof data.downloadPath !== 'string' || !data.downloadPath.startsWith(`/d/${payload}?ticket=`)) {
+        throw new Error('Download could not be prepared.');
       }
-    } catch (err) {
-      hideProgress();
-      showResult('error', 'Import failed', (err && err.message) || 'Network error.');
+
+      const waitMs = Math.max(5_000, Number(data.waitMs) || 5_000);
+      const startedAt = performance.now();
+      const tick = () => {
+        const elapsed = performance.now() - startedAt;
+        const remaining = Math.max(0, waitMs - elapsed);
+        const seconds = Math.ceil(remaining / 1000);
+        fill.style.transform = `scaleX(${Math.min(1, elapsed / waitMs)})`;
+
+        if (remaining > 0) {
+          status.textContent = `Download ready in ${seconds} second${seconds === 1 ? '' : 's'}`;
+          downloadTimer = window.setTimeout(tick, 100);
+          return;
+        }
+
+        fill.style.transform = 'scaleX(1)';
+        status.textContent = 'Download ready';
+        button.href = data.downloadPath;
+        button.setAttribute('download', '');
+        button.setAttribute('aria-disabled', 'false');
+        button.removeAttribute('tabindex');
+        button.classList.remove('is-disabled');
+      };
+      tick();
+    } catch (error) {
+      status.textContent = error instanceof Error ? error.message.slice(0, 200) : 'Download could not be prepared.';
+      fill.style.transform = 'scaleX(0)';
+      button.hidden = true;
     }
-  }
-
-  function nameFromUrl(url) {
-    try {
-      const path = new URL(url).pathname;
-      const name = decodeURIComponent(path.split('/').pop() || '');
-      return name && name.length > 2 ? name : 'file';
-    } catch {
-      return 'file';
-    }
-  }
-
-  /* --------------------------- share viewer ---------------------------- */
-
-  const viewerSection = $('viewer');
-  const viewerBody = $('viewerBody');
-
-  function viewerActions(target) {
-    const actions = document.createElement('div');
-    actions.className = 'viewer-actions';
-
-    const download = document.createElement('a');
-    download.className = 'btn btn-primary';
-    download.href = target;
-    download.target = '_blank';
-    download.rel = 'noopener noreferrer';
-    download.textContent = 'Download file';
-    actions.appendChild(download);
-
-    const copy = document.createElement('button');
-    copy.type = 'button';
-    copy.className = 'btn btn-ghost';
-    copy.textContent = 'Copy direct link';
-    copy.addEventListener('click', () => copyText(target, 'Direct link copied'));
-    actions.appendChild(copy);
-
-    return actions;
-  }
-
-  function viewerHeader(name, sub) {
-    const wrap = document.createElement('div');
-    const icon = document.createElement('div');
-    icon.className = 'viewer-file-icon';
-    icon.textContent = '📦';
-    const title = document.createElement('h2');
-    title.className = 'viewer-body-title';
-    title.textContent = name;
-    const note = document.createElement('p');
-    note.className = 'viewer-body-sub';
-    note.textContent = sub;
-    wrap.append(icon, title, note);
-    return wrap;
   }
 
   function renderViewer(payload) {
-    let target = null;
-    try { target = fromB64(payload); } catch { /* ignore */ }
+    const entry = decodeSharePayload(payload);
+    const target = entry && trustedUrl(entry.url);
+    const download = byId('viewerDownload');
+    homeView.hidden = true;
+    viewerView.hidden = false;
+    document.querySelector('.skip-link').hidden = true;
 
-    const valid = target && /^https?:\/\//i.test(target);
-    if (!valid) {
-      viewerSection.classList.remove('hidden');
-      const title = document.createElement('h2');
-      title.className = 'viewer-body-title';
-      title.textContent = 'This link looks invalid';
-      const note = document.createElement('p');
-      note.className = 'viewer-body-sub';
-      note.textContent = 'The shared file link couldn’t be opened here. Ask the sender for a fresh link.';
-      viewerBody.replaceChildren(title, note);
+    download.addEventListener('click', (event) => {
+      if (download.getAttribute('aria-disabled') !== 'false') event.preventDefault();
+    });
+
+    if (!entry || !target) {
+      byId('viewerKind').textContent = 'ERR';
+      byId('viewerName').textContent = 'Invalid link';
+      byId('viewerMeta').textContent = 'This shared link cannot be opened.';
+      byId('viewerStatus').textContent = 'Download unavailable';
+      document.title = 'Invalid link — Yori';
+      download.hidden = true;
+      byId('viewerCopy').hidden = true;
       return;
     }
 
-    // Image links get an inline preview; everything else shows a download card.
-    const looksLikeImage = /\.(png|jpe?g|webp|gif|avif|bmp)$/i.test(target);
-    const name = urlBasename(target);
-    const note = document.createElement('p');
-    note.className = 'viewer-body-sub';
-    note.textContent = 'Shared via YoriUpload — links may expire or be removed by their owner.';
-
-    if (looksLikeImage) {
-      const img = document.createElement('img');
-      img.className = 'viewer-image';
-      img.alt = 'Shared file';
-      img.loading = 'eager';
-      const fallback = () => {
-        viewerBody.replaceChildren(viewerHeader(name, 'This shared file is available to download.'), viewerActions(target));
-      };
-      img.onload = () => {
-        note.textContent = `${name} · displayed by YoriUpload`;
-        viewerBody.replaceChildren(viewerHeader(name, note.textContent), img, viewerActions(target));
-      };
-      img.onerror = fallback;
-      const title = document.createElement('h2');
-      title.className = 'viewer-body-title';
-      title.textContent = 'Opening shared file…';
-      viewerSection.classList.remove('hidden');
-      viewerBody.replaceChildren(title, img);
-      img.src = target; // kick off the load
-    } else {
-      viewerSection.classList.remove('hidden');
-      viewerBody.replaceChildren(
-        viewerHeader(name, 'This shared file is available to download.'),
-        viewerActions(target)
-      );
-    }
+    byId('viewerKind').textContent = fileKind(entry.name, entry.type);
+    byId('viewerName').textContent = entry.name;
+    byId('viewerMeta').textContent = [entry.size ? formatBytes(entry.size) : '', 'Permanent file'].filter(Boolean).join(' · ');
+    document.title = `${entry.name} — Yori`;
+    byId('viewerCopy').addEventListener('click', () => copyText(location.href));
+    prepareViewerDownload(payload);
   }
 
-  /* ------------------------------ events ------------------------------- */
-
-  browseBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    fileInput.click();
-  });
-
   dropzone.addEventListener('click', () => fileInput.click());
-  dropzone.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      fileInput.click();
-    }
-  });
-
-  ['dragenter', 'dragover'].forEach((ev) =>
-    dropzone.addEventListener(ev, (e) => {
-      e.preventDefault();
-      dropzone.classList.add('dragover');
-    })
-  );
-  ['dragleave', 'drop'].forEach((ev) =>
-    dropzone.addEventListener(ev, (e) => {
-      e.preventDefault();
-      dropzone.classList.remove('dragover');
-    })
-  );
-
-  dropzone.addEventListener('drop', (e) => {
-    const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-    if (file) uploadFile(file);
-  });
 
   fileInput.addEventListener('change', () => {
     const file = fileInput.files && fileInput.files[0];
-    if (file) uploadFile(file);
     fileInput.value = '';
+    if (file) uploadFile(file);
   });
 
-  document.addEventListener('paste', (e) => {
-    const items = (e.clipboardData && e.clipboardData.items) || [];
-    for (const item of items) {
-      if (item.kind === 'file') {
-        const f = item.getAsFile();
-        if (f) {
-          e.preventDefault();
-          uploadFile(f);
-          return;
-        }
-      }
+  for (const eventName of ['dragenter', 'dragover']) {
+    dropzone.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      if (eventName === 'dragenter') dragDepth += 1;
+      dropzone.classList.add('is-dragging');
+    });
+  }
+
+  dropzone.addEventListener('dragleave', (event) => {
+    event.preventDefault();
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) dropzone.classList.remove('is-dragging');
+  });
+
+  dropzone.addEventListener('drop', (event) => {
+    event.preventDefault();
+    dragDepth = 0;
+    dropzone.classList.remove('is-dragging');
+    const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+    if (file) uploadFile(file);
+  });
+
+  window.addEventListener('dragover', (event) => event.preventDefault());
+  window.addEventListener('drop', (event) => {
+    event.preventDefault();
+    dragDepth = 0;
+    dropzone.classList.remove('is-dragging');
+  });
+  window.addEventListener('dragend', () => {
+    dragDepth = 0;
+    dropzone.classList.remove('is-dragging');
+  });
+
+  document.addEventListener('paste', (event) => {
+    if (homeView.hidden || idleView.hidden || !event.clipboardData) return;
+    let file = event.clipboardData.files && event.clipboardData.files[0];
+    if (!file) {
+      const item = Array.from(event.clipboardData.items || []).find((candidate) => candidate.kind === 'file');
+      file = item && item.getAsFile();
+    }
+    if (file) {
+      event.preventDefault();
+      uploadFile(file);
     }
   });
 
-  importForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const url = importUrl.value.trim();
-    if (!url) return;
-    if (!isDirectFileUrl(url)) {
-      showResult('error', 'Invalid link', 'Please paste the full direct URL of the file (ending in the file name or being an image/file link).');
-      return;
-    }
-    importFromUrl(url);
-    importUrl.value = '';
+  byId('cancelUpload').addEventListener('click', () => {
+    requestVersion += 1;
+    if (activeRequest) activeRequest.abort();
+    activeRequest = null;
+    activeFile = null;
+    fileInput.value = '';
+    setView('idle');
+    dropzone.focus({ preventScroll: true });
+    showToast('Upload cancelled');
   });
 
-  $('clearHistory').addEventListener('click', () => {
-    try { localStorage.removeItem(HISTORY_STORAGE); } catch { /* ignore */ }
+  byId('retryUpload').addEventListener('click', () => {
+    if (activeFile) uploadFile(activeFile);
+  });
+
+  byId('newUpload').addEventListener('click', resetUploader);
+  byId('copyLink').addEventListener('click', () => copyText(byId('shareUrl').value));
+  byId('shareUrl').addEventListener('click', (event) => event.currentTarget.select());
+
+  byId('shareLink').addEventListener('click', async () => {
+    if (!currentEntry || typeof navigator.share !== 'function') return;
+    try {
+      await navigator.share({ title: currentEntry.name, url: makeShareLink(currentEntry) });
+    } catch (error) {
+      if (error && error.name !== 'AbortError') showToast('Could not open share menu');
+    }
+  });
+
+  byId('clearHistory').addEventListener('click', () => {
+    try {
+      localStorage.removeItem(HISTORY_KEY);
+    } catch {
+      // The UI can still clear even if storage is blocked.
+    }
     renderHistory();
     showToast('History cleared');
   });
 
-  if (location.pathname.startsWith('/v/')) {
-    const shareMatch = location.pathname.match(/^\/v\/([A-Za-z0-9_-]+)\/?$/);
-    document.body.classList.add('viewing');
-    renderViewer(shareMatch ? shareMatch[1] : '');
+  window.addEventListener('online', updateNetworkState);
+  window.addEventListener('offline', updateNetworkState);
+  window.addEventListener('beforeunload', () => {
+    clearPreview();
+    clearTimeout(downloadTimer);
+  });
+
+  const viewerMatch = location.pathname.match(/^\/v\/([A-Za-z0-9_-]{1,4096}\.[A-Za-z0-9_-]{43})\/?$/);
+  updateNetworkState();
+  if (viewerMatch) {
+    renderViewer(viewerMatch[1]);
   } else {
     renderHistory();
   }

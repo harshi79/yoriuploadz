@@ -3,123 +3,164 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>YoriUpload — share files instantly</title>
-  <meta name="description" content="Fast, private file sharing. Upload, get a link, share it anywhere — no account needed." />
-  <meta name="theme-color" content="#0b0d12" />
+  <title>Yori — send a file</title>
+  <meta name="description" content="Upload a file, share a Yori link, and download without leaving the site." />
+  <meta name="theme-color" content="#10110f" />
+  <meta property="og:title" content="Yori — send a file" />
+  <meta property="og:description" content="Permanent file sharing without visitor accounts or external redirects." />
+  <meta property="og:type" content="website" />
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <div class="bg-glow" aria-hidden="true"></div>
+  <a class="skip-link" href="#uploader">Skip to upload</a>
 
-  <header class="site-header">
-    <div class="brand">
-      <span class="brand-mark" aria-hidden="true">Y</span>
-      <span class="brand-name">YoriUpload</span>
+  <header class="site-header shell">
+    <a class="brand" href="/" aria-label="Yori home">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+        <path d="M7 8.5 16 17l9-8.5M16 17v8" />
+      </svg>
+      <span class="brand-word">YORI</span>
+      <span class="brand-slash">/</span>
+      <span class="brand-product">UPLOAD</span>
+    </a>
+
+    <div class="network-state" id="networkState" aria-live="polite">
+      <span class="network-dot" aria-hidden="true"></span>
+      <span id="networkText">READY</span>
     </div>
-    <span class="badge">v1 · private beta</span>
   </header>
 
-  <main>
-    <section class="hero" id="top">
-      <h1>Share files <span class="accent">instantly.</span></h1>
-      <p class="sub">
-        Drop a file, grab a link. Live for 1 hour, 24 hours, or forever —
-        no account, no sign-up, no downloads required.
-      </p>
-    </section>
+  <main class="shell home" id="homeView">
+    <section class="hero" aria-labelledby="heroTitle">
+      <div class="hero-copy">
+        <p class="overline"><span>YORI TRANSFER SYSTEM</span><span>V3.1</span></p>
+        <h1 id="heroTitle">FILE IN.<span>LINK OUT.</span></h1>
+        <p class="hero-intro">Permanent storage. Five-second Yori download.</p>
 
-    <section class="panel uploader" aria-label="Upload a file">
-      <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Choose or drop a file to upload">
-        <div class="dz-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 16V4" />
-            <path d="m7 9 5-5 5 5" />
-            <path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
-          </svg>
+        <dl class="spec-list">
+          <div>
+            <dt>LIMIT</dt>
+            <dd>200 MB</dd>
+          </div>
+          <div>
+            <dt>ACCESS</dt>
+            <dd>No sign-up</dd>
+          </div>
+          <div>
+            <dt>STORAGE</dt>
+            <dd>Permanent</dd>
+          </div>
+        </dl>
+      </div>
+
+      <section class="upload-panel" id="uploader" aria-labelledby="uploadLabel">
+        <div class="panel-topline">
+          <h2 id="uploadLabel">UPLOAD</h2>
+          <span id="panelState">IDLE</span>
         </div>
-        <div class="dz-copy">
-          <strong>Drag &amp; drop a file here</strong>
-          <span>or <button type="button" class="link-btn" id="browseBtn">browse your device</button> · paste from clipboard (Ctrl+V)</span>
+
+        <div class="idle-view" id="idleView">
+          <button class="dropzone" id="dropzone" type="button" aria-describedby="dropHint">
+            <span class="drop-icon" aria-hidden="true">
+              <svg viewBox="0 0 32 32">
+                <path d="M16 22V7m0 0-6 6m6-6 6 6M7 22v3h18v-3" />
+              </svg>
+            </span>
+            <span class="drop-title">DROP FILE</span>
+            <span class="drop-action">Browse</span>
+            <span class="drop-hint" id="dropHint">200 MB MAX · PASTE ENABLED</span>
+          </button>
+          <input class="visually-hidden" id="fileInput" type="file" />
         </div>
-        <input type="file" id="fileInput" hidden />
-      </div>
 
-      <div class="row option-row">
-        <label class="option" for="life-select">
-          <span>Link expires</span>
-          <select id="life-select">
-            <option value="1h">1 hour</option>
-            <option value="12h">12 hours</option>
-            <option value="24h" selected>24 hours</option>
-            <option value="72h">72 hours</option>
-            <option value="permanent">Never (permanent)</option>
-          </select>
-        </label>
-      </div>
+        <div class="progress-view" id="progressView" hidden aria-live="polite">
+          <div class="file-summary">
+            <span class="file-kind" id="progressKind">FILE</span>
+            <span class="file-copy">
+              <strong id="progressName">file</strong>
+              <small id="progressSize">0 B</small>
+            </span>
+            <button class="text-button" id="cancelUpload" type="button">Cancel</button>
+          </div>
+          <progress class="progress-line" id="progressBar" max="100" value="0" aria-label="Upload progress">0%</progress>
+          <div class="progress-meta">
+            <span id="progressText">Connecting</span>
+            <strong id="progressPercent">0%</strong>
+          </div>
+        </div>
 
-      <details class="import-zone" id="importZone">
-        <summary>Import a file from a URL</summary>
-        <form id="importForm" class="import-form">
-          <input type="url" id="importUrl" placeholder="https://example.com/file.pdf" required autocomplete="off" />
-          <button type="submit" class="btn btn-ghost">Import</button>
-        </form>
-      </details>
+        <div class="outcome-view" id="outcomeView" hidden aria-live="polite">
+          <div class="outcome-mark" id="outcomeMark" aria-hidden="true">
+            <svg class="success-icon" viewBox="0 0 32 32"><path d="m8 16 5 5L24 10" /></svg>
+            <svg class="error-icon" viewBox="0 0 32 32"><path d="M16 9v9m0 5v.1" /></svg>
+          </div>
+          <p class="outcome-label" id="outcomeLabel">DONE</p>
+          <h2 id="outcomeTitle" tabindex="-1">Link ready.</h2>
+          <p class="outcome-message" id="outcomeMessage"></p>
 
-      <div id="progress" class="progress hidden" role="status" aria-live="polite">
-        <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
-        <span id="progressText">Uploading…</span>
-      </div>
+          <figure class="image-preview" id="imagePreview" hidden>
+            <img id="previewImage" alt="Uploaded image preview" />
+          </figure>
 
-      <div id="result" class="result hidden" aria-live="polite"></div>
+          <div class="share-control" id="shareControl">
+            <label for="shareUrl">SHARE LINK</label>
+            <div class="share-input">
+              <input id="shareUrl" type="text" readonly spellcheck="false" />
+              <button id="copyLink" type="button">Copy</button>
+            </div>
+          </div>
 
-      <p id="limitNote" class="limit-note">Images are optimized automatically · up to ~4 MB per upload</p>
+          <div class="outcome-actions">
+            <a class="action action-dark" id="openLink" href="#">View download</a>
+            <button class="action action-dark" id="shareLink" type="button" hidden>Share</button>
+            <button class="action action-line" id="retryUpload" type="button" hidden>Retry</button>
+            <button class="action action-line" id="newUpload" type="button">New upload</button>
+          </div>
+        </div>
+
+        <p class="provider-note"><span>CATBOX / ACCOUNT</span><span>PERMANENT</span></p>
+      </section>
     </section>
 
-    <section id="viewer" class="panel viewer hidden" aria-label="File viewer">
-      <div class="viewer-brand"><span class="brand-mark" aria-hidden="true">Y</span> YoriUpload</div>
-      <div id="viewerBody"></div>
-    </section>
-
-    <section class="recent" id="recentSection" hidden>
-      <div class="recent-head">
-        <h2>Recent uploads</h2>
-        <button type="button" class="link-btn" id="clearHistory">clear</button>
+    <section class="recent" id="recentSection" hidden aria-labelledby="recentTitle">
+      <div class="section-heading">
+        <div>
+          <p class="overline">LOCAL HISTORY</p>
+          <h2 id="recentTitle">Recent links</h2>
+        </div>
+        <button class="text-button text-button-light" id="clearHistory" type="button">Clear all</button>
       </div>
-      <ul id="recentList" class="recent-list"></ul>
-    </section>
-
-    <section class="features">
-      <div class="feature">
-        <div class="feature-icon" aria-hidden="true">⚡</div>
-        <h3>Lightning fast</h3>
-        <p>Uploads stream straight to storage. Your link is ready in seconds.</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon" aria-hidden="true">🔒</div>
-        <h3>No account</h3>
-        <p>No email, no name, no sign-up. Just drop a file and share the link.</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon" aria-hidden="true">♾️</div>
-        <h3>Choose expiry</h3>
-        <p>Links can live for hours or stay permanent. You decide.</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon" aria-hidden="true">🖥️</div>
-        <h3>Works everywhere</h3>
-        <p>Built for desktop and mobile browsers — nothing to install.</p>
-      </div>
+      <ul class="recent-list" id="recentList"></ul>
     </section>
   </main>
 
-  <footer class="site-footer">
-    <p>Files are transmitted securely and stored on redundant infrastructure. Uploaded content is governed by our acceptable-use policy — see <a href="/terms.html">Terms</a>.</p>
-    <p class="footer-mini">YoriUpload · made for fast, simple sharing</p>
+  <main class="share-page shell" id="viewerView" hidden>
+    <article class="share-card">
+      <p class="overline"><span>YORI DOWNLOAD</span><span>GATE / 05</span></p>
+      <div class="shared-kind" id="viewerKind" aria-hidden="true">FILE</div>
+      <h1 id="viewerName">Shared file</h1>
+      <p id="viewerMeta">Permanent file</p>
+      <div class="download-wait" id="downloadWait" aria-live="polite">
+        <div class="countdown-track" aria-hidden="true"><span id="countdownFill"></span></div>
+        <p id="viewerStatus">Starting 5-second wait…</p>
+      </div>
+      <div class="viewer-actions">
+        <a class="action action-accent is-disabled" id="viewerDownload" href="#" aria-disabled="true" tabindex="-1">Download file</a>
+        <button class="action action-line-light" id="viewerCopy" type="button">Copy link</button>
+      </div>
+      <p class="viewer-note">FILE RELAYED BY YORI</p>
+    </article>
+  </main>
+
+  <footer class="site-footer shell" id="siteFooter">
+    <span>© 2026 YORI</span>
+    <nav aria-label="Footer">
+      <a href="/terms.html">Terms</a>
+    </nav>
   </footer>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-
   <script src="/app.js" defer></script>
 </body>
 </html>

@@ -9,7 +9,6 @@
 .DS_Store
 Thumbs.db
 
-# Local Netlify / tooling
-.netlify/
+# Local tooling
 node_modules/
 dist/
