@@ -864,8 +864,42 @@ a {
   letter-spacing: 0.06em;
 }
 
+.download-wait {
+  margin-top: 34px;
+}
+
+.countdown-track {
+  height: 3px;
+  overflow: hidden;
+  background: var(--line-strong);
+}
+
+.countdown-track span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform: scaleX(0);
+  transform-origin: left center;
+  background: var(--acid);
+  transition: transform 100ms linear;
+}
+
+.download-wait p {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.67rem;
+  letter-spacing: 0.06em;
+}
+
 .viewer-actions {
-  margin-top: 42px;
+  margin-top: 28px;
+}
+
+.action.is-disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .action-accent {

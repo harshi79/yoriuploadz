@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: yoriupload
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CATBOX_USERHASH
+        sync: false
+      - key: SHARE_SECRET
+        generateValue: true

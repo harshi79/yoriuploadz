@@ -2,8 +2,8 @@
   'use strict';
 
   const UPLOAD_ENDPOINT = '/api/upload';
-  const MAX_UPLOAD_BYTES = 100_000_000;
-  const HISTORY_KEY = 'yori_upload_history';
+  const MAX_UPLOAD_BYTES = 200_000_000;
+  const HISTORY_KEY = 'yori_upload_history_v3';
   const HISTORY_LIMIT = 10;
   const TRUSTED_HOST = 'files.catbox.moe';
   const BLOCKED_EXTENSIONS = new Set(['exe', 'scr', 'cpl', 'jar']);
@@ -28,6 +28,7 @@
   let previewUrl = '';
   let currentEntry = null;
   let dragDepth = 0;
+  let downloadTimer = 0;
 
   function formatBytes(value) {
     const bytes = Number(value);
@@ -103,13 +104,14 @@
     }
   }
 
-  function bytesToBase64Url(bytes) {
-    let binary = '';
-    const chunkSize = 0x8000;
-    for (let index = 0; index < bytes.length; index += chunkSize) {
-      binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
-    }
-    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  function trustedSharePath(value) {
+    const path = String(value || '');
+    return /^\/v\/[A-Za-z0-9_-]{1,4096}\.[A-Za-z0-9_-]{43}$/.test(path) ? path : '';
+  }
+
+  function makeShareLink(entry) {
+    const sharePath = entry && trustedSharePath(entry.sharePath);
+    return sharePath ? `${location.origin}${sharePath}` : '';
   }
 
   function base64UrlToBytes(value) {
@@ -118,34 +120,19 @@
     return Uint8Array.from(binary, (character) => character.charCodeAt(0));
   }
 
-  function makeShareLink(entry) {
-    const payload = JSON.stringify({
-      u: entry.url,
-      n: entry.name || 'Shared file',
-      s: Number(entry.size) || 0,
-      t: entry.type || '',
-    });
-    const encoded = bytesToBase64Url(new TextEncoder().encode(payload));
-    return `${location.origin}/v/${encoded}`;
-  }
-
   function decodeSharePayload(value) {
-    if (typeof value !== 'string' || value.length > 4096) return null;
+    const match = String(value || '').match(/^([A-Za-z0-9_-]{1,4096})\.([A-Za-z0-9_-]{43})$/);
+    if (!match) return null;
     try {
-      const decoded = new TextDecoder().decode(base64UrlToBytes(value));
-      try {
-        const parsed = JSON.parse(decoded);
-        if (parsed && typeof parsed.u === 'string') {
-          return {
-            url: parsed.u,
-            name: displayName(parsed.n),
-            size: Number(parsed.s) || 0,
-            type: String(parsed.t || '').slice(0, 100),
-          };
-        }
-      } catch {
-        // Links from the previous version stored only the URL.
-        return { url: decoded, name: 'Shared file', size: 0, type: '' };
+      const decoded = new TextDecoder().decode(base64UrlToBytes(match[1]));
+      const parsed = JSON.parse(decoded);
+      if (parsed && typeof parsed.u === 'string') {
+        return {
+          url: parsed.u,
+          name: displayName(parsed.n),
+          size: Number(parsed.s) || 0,
+          type: String(parsed.t || '').slice(0, 100),
+        };
       }
     } catch {
       return null;
@@ -156,7 +143,16 @@
   function trustedUrl(value) {
     try {
       const url = new URL(value);
-      if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== TRUSTED_HOST) return null;
+      if (
+        url.protocol !== 'https:' ||
+        url.hostname.toLowerCase() !== TRUSTED_HOST ||
+        url.port ||
+        url.username ||
+        url.password ||
+        url.search ||
+        url.hash ||
+        !/^\/[A-Za-z0-9._-]+$/.test(url.pathname)
+      ) return null;
       return url.href;
     } catch {
       return null;
@@ -207,7 +203,7 @@
     if (response && typeof response.error === 'string' && response.error.trim()) {
       return response.error.trim().slice(0, 240);
     }
-    if (status === 413) return 'Maximum file size is 100 MB.';
+    if (status === 413) return 'Maximum file size is 200 MB.';
     if (status === 429) return 'Too many uploads. Wait a minute and retry.';
     if (status === 503) return 'Permanent storage is not configured.';
     if (status >= 500) return 'Storage is temporarily unavailable. Retry in a moment.';
@@ -231,9 +227,9 @@
     byId('outcomeTitle').focus({ preventScroll: true });
   }
 
-  function showSuccess(file, providerUrl) {
+  function showSuccess(file, sharePath) {
     const entry = {
-      url: providerUrl,
+      sharePath,
       name: displayName(file.name),
       size: file.size,
       type: file.type || '',
@@ -249,7 +245,7 @@
     byId('shareUrl').value = shareUrl;
     byId('shareControl').hidden = false;
     byId('openLink').hidden = false;
-    byId('openLink').href = providerUrl;
+    byId('openLink').href = shareUrl;
     byId('retryUpload').hidden = true;
     byId('newUpload').textContent = 'New upload';
     byId('shareLink').hidden = typeof navigator.share !== 'function';
@@ -276,7 +272,7 @@
     }
     if (file.size > MAX_UPLOAD_BYTES) {
       activeFile = file;
-      showError('Maximum file size is 100 MB.', false);
+      showError('Maximum file size is 200 MB.', false);
       return;
     }
 
@@ -337,9 +333,9 @@
         response = null;
       }
 
-      const providerUrl = response && trustedUrl(response.url);
-      if (request.status >= 200 && request.status < 300 && response && response.ok === true && response.permanent === true && providerUrl) {
-        showSuccess(file, providerUrl);
+      const sharePath = response && trustedSharePath(response.sharePath);
+      if (request.status >= 200 && request.status < 300 && response && response.ok === true && response.permanent === true && sharePath) {
+        showSuccess(file, sharePath);
       } else {
         showError(explainUploadFailure(request.status, response), request.status !== 415);
       }
@@ -365,9 +361,9 @@
       const stored = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
       if (!Array.isArray(stored)) return [];
       return stored
-        .filter((item) => item && trustedUrl(item.url))
+        .filter((item) => item && trustedSharePath(item.sharePath))
         .map((item) => ({
-          url: trustedUrl(item.url),
+          sharePath: trustedSharePath(item.sharePath),
           name: displayName(item.name),
           size: Number(item.size) || 0,
           type: String(item.type || '').slice(0, 100),
@@ -380,7 +376,7 @@
   }
 
   function addHistory(entry) {
-    const history = readHistory().filter((item) => item.url !== entry.url);
+    const history = readHistory().filter((item) => item.sharePath !== entry.sharePath);
     history.unshift(entry);
     try {
       localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, HISTORY_LIMIT)));
@@ -428,11 +424,9 @@
       copy.setAttribute('aria-label', `Copy link for ${item.name}`);
       copy.addEventListener('click', () => copyText(makeShareLink(item)));
       const open = document.createElement('a');
-      open.href = item.url;
-      open.target = '_blank';
-      open.rel = 'noopener noreferrer';
-      open.textContent = 'Open';
-      open.setAttribute('aria-label', `Open ${item.name}`);
+      open.href = makeShareLink(item);
+      open.textContent = 'View';
+      open.setAttribute('aria-label', `View download for ${item.name}`);
       actions.append(copy, open);
 
       row.append(kind, info, size, actions);
@@ -446,30 +440,83 @@
     networkText.textContent = online ? 'READY' : 'OFFLINE';
   }
 
+  async function prepareViewerDownload(payload) {
+    const button = byId('viewerDownload');
+    const status = byId('viewerStatus');
+    const fill = byId('countdownFill');
+
+    try {
+      const response = await fetch(`/api/download-ticket?share=${encodeURIComponent(payload)}`, {
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data || data.ok !== true) {
+        throw new Error(data && data.error ? data.error : 'Download could not be prepared.');
+      }
+      if (typeof data.downloadPath !== 'string' || !data.downloadPath.startsWith(`/d/${payload}?ticket=`)) {
+        throw new Error('Download could not be prepared.');
+      }
+
+      const waitMs = Math.max(5_000, Number(data.waitMs) || 5_000);
+      const startedAt = performance.now();
+      const tick = () => {
+        const elapsed = performance.now() - startedAt;
+        const remaining = Math.max(0, waitMs - elapsed);
+        const seconds = Math.ceil(remaining / 1000);
+        fill.style.transform = `scaleX(${Math.min(1, elapsed / waitMs)})`;
+
+        if (remaining > 0) {
+          status.textContent = `Download ready in ${seconds} second${seconds === 1 ? '' : 's'}`;
+          downloadTimer = window.setTimeout(tick, 100);
+          return;
+        }
+
+        fill.style.transform = 'scaleX(1)';
+        status.textContent = 'Download ready';
+        button.href = data.downloadPath;
+        button.setAttribute('download', '');
+        button.setAttribute('aria-disabled', 'false');
+        button.removeAttribute('tabindex');
+        button.classList.remove('is-disabled');
+      };
+      tick();
+    } catch (error) {
+      status.textContent = error instanceof Error ? error.message.slice(0, 200) : 'Download could not be prepared.';
+      fill.style.transform = 'scaleX(0)';
+      button.hidden = true;
+    }
+  }
+
   function renderViewer(payload) {
     const entry = decodeSharePayload(payload);
     const target = entry && trustedUrl(entry.url);
+    const download = byId('viewerDownload');
     homeView.hidden = true;
     viewerView.hidden = false;
     document.querySelector('.skip-link').hidden = true;
+
+    download.addEventListener('click', (event) => {
+      if (download.getAttribute('aria-disabled') !== 'false') event.preventDefault();
+    });
 
     if (!entry || !target) {
       byId('viewerKind').textContent = 'ERR';
       byId('viewerName').textContent = 'Invalid link';
       byId('viewerMeta').textContent = 'This shared link cannot be opened.';
+      byId('viewerStatus').textContent = 'Download unavailable';
       document.title = 'Invalid link — Yori';
-      byId('viewerOpen').hidden = true;
+      download.hidden = true;
       byId('viewerCopy').hidden = true;
       return;
     }
 
-    const provider = 'Hosted permanently by Catbox';
     byId('viewerKind').textContent = fileKind(entry.name, entry.type);
     byId('viewerName').textContent = entry.name;
-    byId('viewerMeta').textContent = [entry.size ? formatBytes(entry.size) : '', provider].filter(Boolean).join(' · ');
-    byId('viewerOpen').href = target;
+    byId('viewerMeta').textContent = [entry.size ? formatBytes(entry.size) : '', 'Permanent file'].filter(Boolean).join(' · ');
     document.title = `${entry.name} — Yori`;
     byId('viewerCopy').addEventListener('click', () => copyText(location.href));
+    prepareViewerDownload(payload);
   }
 
   dropzone.addEventListener('click', () => fileInput.click());
@@ -566,9 +613,12 @@
 
   window.addEventListener('online', updateNetworkState);
   window.addEventListener('offline', updateNetworkState);
-  window.addEventListener('beforeunload', clearPreview);
+  window.addEventListener('beforeunload', () => {
+    clearPreview();
+    clearTimeout(downloadTimer);
+  });
 
-  const viewerMatch = location.pathname.match(/^\/v\/([A-Za-z0-9_-]+)\/?$/);
+  const viewerMatch = location.pathname.match(/^\/v\/([A-Za-z0-9_-]{1,4096}\.[A-Za-z0-9_-]{43})\/?$/);
   updateNetworkState();
   if (viewerMatch) {
     renderViewer(viewerMatch[1]);

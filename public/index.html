@@ -4,10 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Yori — send a file</title>
-  <meta name="description" content="Upload a file and get a permanent Catbox link. No visitor account required." />
+  <meta name="description" content="Upload a file, share a Yori link, and download without leaving the site." />
   <meta name="theme-color" content="#0d0f0e" />
   <meta property="og:title" content="Yori — send a file" />
-  <meta property="og:description" content="Upload once. Share one permanent link. No visitor account." />
+  <meta property="og:description" content="Permanent file sharing without visitor accounts or external redirects." />
   <meta property="og:type" content="website" />
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/styles.css" />
@@ -41,7 +41,7 @@
         <dl class="spec-list">
           <div>
             <dt>LIMIT</dt>
-            <dd>100 MB</dd>
+            <dd>200 MB</dd>
           </div>
           <div>
             <dt>ACCESS</dt>
@@ -69,7 +69,7 @@
             </span>
             <span class="drop-title">Drop a file here</span>
             <span class="drop-action">or choose a file</span>
-            <span class="drop-hint" id="dropHint">Up to 100 MB · paste works too</span>
+            <span class="drop-hint" id="dropHint">Up to 200 MB · paste works too</span>
           </button>
           <input class="visually-hidden" id="fileInput" type="file" />
         </div>
@@ -112,7 +112,7 @@
           </div>
 
           <div class="outcome-actions">
-            <a class="action action-dark" id="openLink" href="#" target="_blank" rel="noopener noreferrer">Open</a>
+            <a class="action action-dark" id="openLink" href="#">View download</a>
             <button class="action action-dark" id="shareLink" type="button" hidden>Share</button>
             <button class="action action-line" id="retryUpload" type="button" hidden>Retry</button>
             <button class="action action-line" id="newUpload" type="button">New upload</button>
@@ -140,12 +140,16 @@
       <p class="overline"><span>SHARED FILE</span><span>YORI</span></p>
       <div class="shared-kind" id="viewerKind" aria-hidden="true">FILE</div>
       <h1 id="viewerName">Shared file</h1>
-      <p id="viewerMeta">Hosted permanently by Catbox</p>
+      <p id="viewerMeta">Permanent file</p>
+      <div class="download-wait" id="downloadWait" aria-live="polite">
+        <div class="countdown-track" aria-hidden="true"><span id="countdownFill"></span></div>
+        <p id="viewerStatus">Preparing secure download…</p>
+      </div>
       <div class="viewer-actions">
-        <a class="action action-accent" id="viewerOpen" href="#" target="_blank" rel="noopener noreferrer">Open file</a>
+        <a class="action action-accent is-disabled" id="viewerDownload" href="#" aria-disabled="true" tabindex="-1">Download file</a>
         <button class="action action-line-light" id="viewerCopy" type="button">Copy link</button>
       </div>
-      <p class="viewer-note">Account-associated Catbox storage.</p>
+      <p class="viewer-note">Your download stays on Yori.</p>
     </article>
   </main>
 
@@ -153,7 +157,6 @@
     <span>© 2026 YORI</span>
     <nav aria-label="Footer">
       <a href="/terms.html">Terms</a>
-      <a href="https://catbox.moe/" target="_blank" rel="noopener noreferrer">Storage by Catbox</a>
     </nav>
   </footer>
 
