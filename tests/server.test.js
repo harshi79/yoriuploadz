@@ -164,6 +164,11 @@ test('fails closed without the Catbox secret and blocks invalid routes', async (
   const origin = await listen(yori);
   context.after(() => close(yori));
 
+  const health = await fetch(`${origin}/health`);
+  assert.equal(health.status, 200);
+  assert.equal(await health.text(), 'OK');
+  assert.equal((await fetch(`${origin}/health`, { method: 'HEAD' })).status, 200);
+
   const upload = await fetch(`${origin}/api/upload`, {
     method: 'POST',
     headers: uploadHeaders(origin),

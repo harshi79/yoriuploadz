@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Yori — send a file</title>
   <meta name="description" content="Upload a file, share a Yori link, and download without leaving the site." />
-  <meta name="theme-color" content="#0d0f0e" />
+  <meta name="theme-color" content="#10110f" />
   <meta property="og:title" content="Yori — send a file" />
   <meta property="og:description" content="Permanent file sharing without visitor accounts or external redirects." />
   <meta property="og:type" content="website" />
@@ -34,9 +34,9 @@
   <main class="shell home" id="homeView">
     <section class="hero" aria-labelledby="heroTitle">
       <div class="hero-copy">
-        <p class="overline"><span>FILE TRANSFER</span><span>001</span></p>
-        <h1 id="heroTitle">Move a file.<span>Keep it simple.</span></h1>
-        <p class="hero-intro">Upload once. Share one permanent link. No visitor account.</p>
+        <p class="overline"><span>YORI TRANSFER SYSTEM</span><span>V3.1</span></p>
+        <h1 id="heroTitle">FILE IN.<span>LINK OUT.</span></h1>
+        <p class="hero-intro">Permanent storage. Five-second Yori download.</p>
 
         <dl class="spec-list">
           <div>
@@ -67,9 +67,9 @@
                 <path d="M16 22V7m0 0-6 6m6-6 6 6M7 22v3h18v-3" />
               </svg>
             </span>
-            <span class="drop-title">Drop a file here</span>
-            <span class="drop-action">or choose a file</span>
-            <span class="drop-hint" id="dropHint">Up to 200 MB · paste works too</span>
+            <span class="drop-title">DROP FILE</span>
+            <span class="drop-action">Browse</span>
+            <span class="drop-hint" id="dropHint">200 MB MAX · PASTE ENABLED</span>
           </button>
           <input class="visually-hidden" id="fileInput" type="file" />
         </div>
@@ -119,7 +119,7 @@
           </div>
         </div>
 
-        <p class="provider-note"><span>CATBOX / ACCOUNT</span><span>No scheduled expiry</span></p>
+        <p class="provider-note"><span>CATBOX / ACCOUNT</span><span>PERMANENT</span></p>
       </section>
     </section>
 
@@ -137,19 +137,19 @@
 
   <main class="share-page shell" id="viewerView" hidden>
     <article class="share-card">
-      <p class="overline"><span>SHARED FILE</span><span>YORI</span></p>
+      <p class="overline"><span>YORI DOWNLOAD</span><span>GATE / 05</span></p>
       <div class="shared-kind" id="viewerKind" aria-hidden="true">FILE</div>
       <h1 id="viewerName">Shared file</h1>
       <p id="viewerMeta">Permanent file</p>
       <div class="download-wait" id="downloadWait" aria-live="polite">
         <div class="countdown-track" aria-hidden="true"><span id="countdownFill"></span></div>
-        <p id="viewerStatus">Preparing secure download…</p>
+        <p id="viewerStatus">Starting 5-second wait…</p>
       </div>
       <div class="viewer-actions">
         <a class="action action-accent is-disabled" id="viewerDownload" href="#" aria-disabled="true" tabindex="-1">Download file</a>
         <button class="action action-line-light" id="viewerCopy" type="button">Copy link</button>
       </div>
-      <p class="viewer-note">Your download stays on Yori.</p>
+      <p class="viewer-note">FILE RELAYED BY YORI</p>
     </article>
   </main>
 

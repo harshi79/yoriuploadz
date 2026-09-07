@@ -1,8 +1,8 @@
 {
   "name": "yoriupload",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "private": true,
-  "description": "Permanent Catbox file sharing on a simple Render web service.",
+  "description": "Dockerized permanent Catbox sharing with gated Yori downloads.",
   "scripts": {
     "dev": "node --env-file-if-exists=.env server.js",
     "build": "npm run check",

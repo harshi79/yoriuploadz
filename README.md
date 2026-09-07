@@ -1,88 +1,127 @@
 # Yori
 
-Permanent Catbox file sharing through a single Render web service. Visitors upload and download on Yori without creating an account or being redirected to Catbox.
+A Dockerized file-sharing service for Render. Visitors upload and download on Yori; Catbox stores the file, but the browser is never redirected there.
 
-## How it works
+## Does Catbox require an API key or account?
 
-```text
-Upload
-Browser ── raw file ──► Yori on Render ── streamed multipart ──► Catbox account
-Browser ◄────────────── Yori /v/... share link ◄───────────────┘
+Catbox's official tools page documents an HTTP form endpoint at `https://catbox.moe/user/api.php`. Yori must call that endpoint to upload a file, but **Catbox does not require an API key**.
 
-Download
-Yori share page ── signed five-second ticket ──► Yori download endpoint
-Browser ◄── attachment stream ◄── Yori ◄── files.catbox.moe
-```
+The `userhash` field is optional:
 
-- The operator's `CATBOX_USERHASH` stays in a protected Render environment variable.
-- Files are associated with that Catbox account, so visitors never log in.
-- The share page enforces a five-second wait before enabling its download button.
-- The download button uses a signed, expiring ticket. Requesting it early returns HTTP 425.
-- File bytes are streamed back through Yori with `Content-Disposition: attachment`; there is no Catbox redirect.
-- ZIP files, images, videos, and other accepted types keep their upstream content type.
-- Range requests are forwarded so supported downloads can resume.
-- Neither uploads nor downloads are buffered completely in server memory.
+- Omit `userhash`: anonymous upload, no account required.
+- Include an account `userhash`: the file is associated with that account.
 
-## Storage limits
-
-Provider details were checked on **7 September 2026**:
-
-- Catbox describes account-associated files as permanent, with no scheduled expiry or inactivity timer.
-- Permanent is not a guarantee that a third-party service will exist forever. Catbox can remove files for policy, legal, abuse, account, or service reasons.
-- Yori accepts files up to **200 MB**, matching Catbox's advertised maximum.
-- Catbox rejects `.exe`, `.scr`, `.cpl`, `.doc*`, and `.jar` files. GIF files are limited to 20 MB.
-- Anyone with a Yori share link can download its file.
+Catbox's FAQ says anonymous files are removed after two years without a hit, while account-associated uploads are permanent. Because Yori's requirement is permanent storage, this build keeps `CATBOX_USERHASH` as one protected Render environment variable. It is not an API key and visitors never see it or log in.
 
 Official references:
 
-- [Catbox FAQ](https://catbox.moe/faq.php)
 - [Catbox API tools](https://catbox.moe/tools.php)
+- [Catbox FAQ](https://catbox.moe/faq.php)
+- [Catbox acceptable-use policy](https://catbox.moe/legal.php)
 
-## Easiest deployment: Render Blueprint
+## File flow
 
-No CLI, Docker, database, or Cloudflare configuration is required.
+```text
+UPLOAD
+Browser ── raw file ──► Yori ── streamed multipart + userhash ──► Catbox account
+Browser ◄──────────── signed Yori /v/... link ◄─────────────────┘
 
-1. Create or sign in to the Catbox account that will own all uploads.
-2. Copy its user hash from the Catbox account page. Never put it in source code or chat.
-3. Sign in to [Render](https://dashboard.render.com/) with GitHub.
-4. Choose **New → Blueprint** and select this repository.
-5. Render reads `render.yaml`. When prompted for `CATBOX_USERHASH`, paste the hash there.
-6. Click **Apply**. Render builds the app, starts it, and gives you an HTTPS `onrender.com` address.
-7. Upload a small test file and confirm it appears in the operator's Catbox account.
+DOWNLOAD
+Yori link ── five-second signed gate ──► Yori /d/... endpoint
+Browser ◄── attachment stream ◄── Yori ◄── files.catbox.moe
+```
 
-`SHARE_SECRET` is generated automatically by Render. It signs the five-second download tickets and requires no manual setup. A custom domain can be attached later from the Render dashboard.
+- Upload and download bodies are streamed instead of buffered in memory.
+- Catbox's direct URL is not returned by the browser API or used as an interface action.
+- Share paths are signed so visitors cannot turn Yori into a proxy for arbitrary Catbox files.
+- Download tickets are signed, server-enforced, and expire after 15 minutes.
+- Requesting a download before five seconds returns HTTP 425.
+- Downloads keep the upstream file type and use `Content-Disposition: attachment`, so ZIPs, images, videos, and other files download without navigating away.
+- Supported range requests are forwarded for resumable downloads.
 
-### Render Free limitations
+## Deploy on Render Free with Docker
 
-Render's Free web service is easy to deploy, but it is intended for hobby projects:
+A Blueprint is not required.
 
-- It spins down after 15 minutes without traffic; the first request afterward can take about one minute while it wakes.
-- The workspace receives 750 Free instance hours per month.
-- Relayed uploads and downloads consume Render bandwidth. Heavy external-storage traffic can exhaust the free allowance or trigger suspension.
-- Catbox might reject traffic from a cloud-hosting network. Verify one real account-associated upload after deployment.
+1. Open the [Render dashboard](https://dashboard.render.com/).
+2. Choose **New → Web Service** and connect this GitHub repository.
+3. Select the branch containing this code, or merge it into `main` first.
+4. Set **Language** to **Docker**. Render automatically finds the root `Dockerfile`.
+5. Choose the **Free** instance type.
+6. Add one environment variable:
+   - Key: `CATBOX_USERHASH`
+   - Value: the user hash from the operator's Catbox account
+7. Under **Advanced**, set **Health Check Path** to `/health`.
+8. Create the service.
 
-Upgrading the same Render service removes the free-instance sleep without changing the code or URLs.
+No build command or start command is needed for the Docker runtime. The image runs its tests while building, starts the dependency-free Node server on Render's `PORT`, and runs as an unprivileged user.
+
+The signing key is derived server-side from the protected Catbox userhash with domain-separated SHA-256. You can optionally set a separate `SHARE_SECRET`, but it is not required. Changing either value invalidates previously issued Yori share links.
 
 Official Render references:
 
-- [Deploy for Free](https://render.com/docs/free)
-- [Blueprint specification](https://render.com/docs/blueprint-spec)
-- [Regions](https://render.com/docs/regions)
+- [Docker on Render](https://render.com/docs/docker)
+- [Web services and port binding](https://render.com/docs/web-services)
+- [Render Free](https://render.com/docs/free)
+- [Health checks](https://render.com/docs/health-checks)
+
+## UptimeRobot health monitor
+
+The same lightweight Node process exposes:
+
+```text
+GET /health     → 200 OK, body: OK
+HEAD /health    → 200 OK
+GET /healthz    → 200 OK, body: OK
+```
+
+Create an UptimeRobot HTTP monitor for:
+
+```text
+https://YOUR-SERVICE.onrender.com/health
+```
+
+A five-minute interval is sufficient. The endpoint performs no Catbox request, file access, database work, or secret lookup. Regular pings consume Render Free instance hours; Render currently grants 750 hours per workspace each month.
+
+## Provider and free-host limits
+
+Checked on **7 September 2026**:
+
+- Yori accepts files up to 200 MB, matching Catbox's advertised maximum.
+- Catbox blocks `.exe`, `.scr`, `.cpl`, `.doc*`, and `.jar`; GIF files are limited to 20 MB.
+- Account-associated uploads have no scheduled expiry, but no third party can guarantee literal forever storage.
+- Catbox can remove policy-violating files and ban the owning account.
+- Catbox requires prior approval for commercial services and prohibits using its files as an external video-streaming source. Yori forces attachment downloads rather than embedding or streaming media. Obtain Catbox approval before monetizing this service.
+- Render Free services normally spin down after 15 minutes without traffic and can take about one minute to wake.
+- Relayed uploads and downloads consume Render bandwidth. High external-storage traffic can exhaust the free allowance or trigger suspension.
+- Catbox may reject traffic from some cloud networks, so verify one real upload after deploying.
 
 ## Local development
 
 ```bash
 npm install
 cp .env.example .env
-# Add CATBOX_USERHASH only to your ignored .env file.
+# Put the account userhash only in the ignored .env file.
 npm run dev
 ```
 
-Open <http://localhost:8888>. The server reads `.env` during local development and binds to `0.0.0.0`.
+Open <http://localhost:8888>. Without `CATBOX_USERHASH`, uploads fail closed with HTTP 503; static pages, health checks, and automated tests still work.
 
-Real Catbox delivery can only be tested when a valid userhash is configured. Without it, the upload endpoint fails closed with `503 Permanent storage is not configured`.
+## Docker validation
 
-## Validation
+```bash
+docker build -t yoriupload .
+docker run --rm -p 10000:10000 yoriupload
+curl http://localhost:10000/health
+```
+
+Expected response:
+
+```text
+OK
+```
+
+## Tests
 
 ```bash
 npm test
@@ -90,31 +129,22 @@ npm run check
 npm run build
 ```
 
-The tests use a local fake Catbox server and verify:
+The local test suite verifies streamed multipart uploads, exact Catbox-host validation, signed share paths, the server-enforced wait, attachment proxying without redirects, `/health`, blocked cross-site uploads, prohibited extensions, and 404 behavior.
 
-- streamed account-associated multipart uploads;
-- trusted `files.catbox.moe` result validation;
-- server-enforced download waiting;
-- signed and expiring download tickets;
-- same-origin attachment streaming without redirects;
-- blocked cross-site uploads and prohibited extensions;
-- app-shell, API, and 404 routes.
+## Security
 
-## Security notes
+The upload endpoint has per-IP and global in-memory rate limits, same-origin browser checks, size restrictions, extension checks, and an exact `files.catbox.moe` result allowlist. The download endpoint accepts only server-signed Catbox files and signed wait tickets.
 
-The public upload endpoint has per-IP and global in-memory rate limits, rejects cross-site browser requests, validates size and extension restrictions, and accepts successful URLs only from `files.catbox.moe`. Download proxying also validates that exact HTTPS host and requires a signed ticket.
-
-These controls reduce casual abuse but are not authentication. The operator remains responsible for files associated with the Catbox account and should review that account regularly.
-
-The Yori share URL contains the Catbox file URL plus display metadata encoded as URL-safe Base64 and signed by the server. The signature prevents visitors from turning Yori into a proxy for arbitrary Catbox files. Encoding is not encryption; Catbox files remain public to anyone who knows their underlying URL. Recent-link history stays only in browser `localStorage`.
+The Yori share path contains signed, URL-safe Base64 metadata. Base64 is not encryption: Catbox files remain public to anyone who discovers their underlying provider URL. The operator is responsible for all content associated with the Catbox account.
 
 ## Project layout
 
 ```text
-public/              uploader, five-second download page, terms, styles
-server.js            static server, Catbox relay, tickets, download proxy
-render.yaml          one-screen Render Blueprint configuration
-tests/server.test.js local end-to-end upload and download tests
+Dockerfile           tested, unprivileged Render container
+.dockerignore        minimal Docker build context
+public/              3D brutalist uploader and gated download interface
+server.js            health route, static server, upload relay, download proxy
+tests/server.test.js local end-to-end tests with a fake Catbox server
 ```
 
 ## License

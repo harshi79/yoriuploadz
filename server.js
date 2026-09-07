@@ -376,12 +376,16 @@ function sendFile(request, response, file, status = 200) {
 }
 
 function createYoriServer(options = {}) {
+  const catboxUserhash = options.catboxUserhash ?? process.env.CATBOX_USERHASH ?? '';
+  const derivedShareSecret = validUserhash(catboxUserhash)
+    ? crypto.createHash('sha256').update(`yori-share:${catboxUserhash}`).digest('base64url')
+    : crypto.randomBytes(32).toString('base64url');
   const config = {
     catboxEndpoint: options.catboxEndpoint || CATBOX_ENDPOINT,
-    catboxUserhash: options.catboxUserhash ?? process.env.CATBOX_USERHASH ?? '',
+    catboxUserhash,
     downloadProxyOrigin: options.downloadProxyOrigin || '',
     downloadWaitMs: options.downloadWaitMs ?? DOWNLOAD_WAIT_MS,
-    shareSecret: options.shareSecret || process.env.SHARE_SECRET || crypto.randomBytes(32).toString('base64url'),
+    shareSecret: options.shareSecret || process.env.SHARE_SECRET || derivedShareSecret,
     upstreamTimeoutMs: options.upstreamTimeoutMs || 10 * 60_000,
   };
   const uploadVisitorLimit = createLimiter(8, 60_000);
@@ -393,8 +397,17 @@ function createYoriServer(options = {}) {
     const url = new URL(request.url, publicOrigin(request));
     const ip = requestIp(request);
 
-    if (url.pathname === '/healthz') {
-      return sendJson(response, 200, { ok: true, storageConfigured: validUserhash(config.catboxUserhash) });
+    if (url.pathname === '/health' || url.pathname === '/healthz') {
+      if (request.method !== 'GET' && request.method !== 'HEAD') {
+        return sendJson(response, 405, { ok: false, error: 'Method not allowed.' }, { Allow: 'GET, HEAD' });
+      }
+      response.writeHead(200, {
+        ...SECURITY_HEADERS,
+        'Cache-Control': 'no-store',
+        'Content-Length': '2',
+        'Content-Type': 'text/plain; charset=utf-8',
+      });
+      return request.method === 'HEAD' ? response.end() : response.end('OK');
     }
 
     if (url.pathname === '/api/upload') {
